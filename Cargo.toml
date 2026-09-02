@@ -6,7 +6,7 @@ authors = ["Antigravity"]
 description = "Lightning-fast Grid Photo Sheet & PDF Generator with Real-Time Live Preview and Direct Print"
 license = "MIT"
 readme = "README.md"
-repository = "https://github.com/your-username/photo_grid_print"
+repository = "https://github.com/sidhantjohnaind/photo_grid_print"
 keywords = ["photo", "grid", "print", "pdf", "generator"]
 categories = ["graphics", "command-line-utilities", "gui"]
 

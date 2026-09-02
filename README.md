@@ -53,13 +53,13 @@ A blazing-fast, standalone desktop application and CLI built with **Rust** that 
 ## 🚀 Quick Start
 
 ### 1. Download & Run
-Download the latest `photo_grid_print.exe` from the [Releases](https://github.com/your-username/photo_grid_print/releases) page and double-click to launch!
+Download the latest `photo_grid_print.exe` from the [Releases](https://github.com/sidhantjohnaind/photo_grid_print/releases) page and double-click to launch!
 
 ### 2. Build from Source
 
 ```bash
 # Clone repository
-git clone https://github.com/your-username/photo_grid_print.git
+git clone https://github.com/sidhantjohnaind/photo_grid_print.git
 cd photo_grid_print
 
 # Build optimized release binary

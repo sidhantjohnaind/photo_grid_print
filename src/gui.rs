@@ -1,10 +1,10 @@
 use crate::config::AppConfig;
 use crate::grid::{
-    render_all_preview_pages_with_copies, render_images_with_copies_to_pdf_pages, FitMode, GridConfig, PaperSize,
+    render_all_preview_pages_with_copies, render_images_with_copies_to_pdf_pages, ColorFilter, FitMode, GridConfig, PaperSize,
 };
 use crate::pdf;
 use eframe::egui::{
-    self, Align2, Color32, ColorImage, CornerRadius, CursorIcon, Frame, Margin, Pos2, Rect, RichText, Sense, Stroke, StrokeKind, TextureHandle, TextureOptions, Vec2,
+    self, Align2, Color32, ColorImage, CornerRadius, CursorIcon, Frame, Margin, Pos2, Rect, RichText, Stroke, StrokeKind, TextureHandle, TextureOptions, Vec2,
 };
 use image::DynamicImage;
 use std::fs;
@@ -43,6 +43,7 @@ pub struct PhotoGridApp {
     pub is_borderless: bool,
     pub is_portrait: bool,
     pub fit_mode: FitMode,
+    pub color_filter: ColorFilter,
     pub show_cut_marks: bool,
     pub output_path: String,
     pub last_folder: Option<String>,
@@ -80,6 +81,7 @@ impl Default for PhotoGridApp {
             is_borderless: cfg.is_borderless,
             is_portrait: cfg.is_portrait,
             fit_mode: cfg.fit_mode,
+            color_filter: cfg.color_filter,
             show_cut_marks: cfg.show_cut_marks,
             output_path: default_out,
             last_folder: cfg.last_folder,
@@ -122,6 +124,7 @@ impl PhotoGridApp {
             is_borderless: self.is_borderless,
             is_portrait: self.is_portrait,
             fit_mode: self.fit_mode,
+            color_filter: self.color_filter,
             show_cut_marks: self.show_cut_marks,
             output_path: Some(self.output_path.clone()),
             last_folder: self.last_folder.clone(),
@@ -191,6 +194,7 @@ impl PhotoGridApp {
             margin_y: (actual_margin as f64 * 0.85) as u32,
             is_portrait: self.is_portrait,
             fit_mode: self.fit_mode,
+            color_filter: self.color_filter,
             show_cut_marks: self.show_cut_marks && !self.is_borderless,
             dpi: 300,
         }
@@ -483,6 +487,8 @@ impl eframe::App for PhotoGridApp {
                                             .show(ui, |ui| {
                                                 let mut to_remove = None;
                                                 let mut to_rotate = None;
+                                                let mut to_swap = None;
+                                                let items_len = self.items.len();
 
                                                 for (idx, item) in self.items.iter_mut().enumerate() {
                                                     let is_selected = self.selected_item_idx == Some(idx);
@@ -510,13 +516,17 @@ impl eframe::App for PhotoGridApp {
 
                                                         if ui.small_button("1x").clicked() { item.copies = 1; }
                                                         if ui.small_button("2x").clicked() { item.copies = 2; }
-                                                        if ui.small_button("3x").clicked() { item.copies = 3; }
                                                         if ui.small_button("4x").clicked() { item.copies = 4; }
-                                                        if ui.small_button("6x").clicked() { item.copies = 6; }
-                                                        if ui.small_button("16x").clicked() { item.copies = 16; }
 
                                                         if ui.small_button("↻ 90°").clicked() {
                                                             to_rotate = Some(idx);
+                                                        }
+
+                                                        if idx > 0 && ui.small_button("▲").clicked() {
+                                                            to_swap = Some((idx, idx - 1));
+                                                        }
+                                                        if idx + 1 < items_len && ui.small_button("▼").clicked() {
+                                                            to_swap = Some((idx, idx + 1));
                                                         }
 
                                                         if item.copies != prev_c {
@@ -535,6 +545,12 @@ impl eframe::App for PhotoGridApp {
                                                     self.preview_dirty = true;
                                                 }
 
+                                                if let Some((a, b)) = to_swap {
+                                                    self.items.swap(a, b);
+                                                    self.selected_item_idx = Some(b);
+                                                    self.preview_dirty = true;
+                                                }
+
                                                 if let Some(idx) = to_remove {
                                                     self.items.remove(idx);
                                                     if self.selected_item_idx == Some(idx) {
@@ -547,10 +563,10 @@ impl eframe::App for PhotoGridApp {
                                 }
                             });
 
-                            // 2. Paper Size & Grid Presets Card
+                            // 2. Paper Size & Grid Presets Card (with Passport/ID Sizes!)
                             card_frame().show(ui, |ui| {
                                 ui.set_width(content_w);
-                                ui.label(RichText::new("2. Grid Layout & Presets").strong().color(Color32::from_rgb(220, 225, 240)));
+                                ui.label(RichText::new("2. Layout, Paper & Presets").strong().color(Color32::from_rgb(220, 225, 240)));
                                 ui.add_space(4.0);
 
                                 ui.horizontal(|ui| {
@@ -578,13 +594,35 @@ impl eframe::App for PhotoGridApp {
                                     let prev_cols = self.cols;
                                     let prev_rows = self.rows;
 
-                                    ui.label("Presets:");
+                                    ui.label("Grid Presets:");
                                     if ui.button(RichText::new("16 (4x4)").strong()).clicked() { self.cols = 4; self.rows = 4; }
                                     if ui.button(RichText::new("9 (3x3)").strong()).clicked() { self.cols = 3; self.rows = 3; }
                                     if ui.button(RichText::new("8 (4x2)").strong()).clicked() { self.cols = 4; self.rows = 2; }
                                     if ui.button(RichText::new("6 (3x2)").strong().color(Color32::from_rgb(0, 190, 230))).clicked() { self.cols = 3; self.rows = 2; }
                                     if ui.button(RichText::new("6 (2x3)").strong().color(Color32::from_rgb(0, 190, 230))).clicked() { self.cols = 2; self.rows = 3; }
                                     if ui.button(RichText::new("4 (2x2)").strong()).clicked() { self.cols = 2; self.rows = 2; }
+
+                                    if self.cols != prev_cols || self.rows != prev_rows {
+                                        self.save_config();
+                                        self.preview_dirty = true;
+                                    }
+                                });
+
+                                ui.add_space(2.0);
+                                ui.horizontal_wrapped(|ui| {
+                                    let prev_cols = self.cols;
+                                    let prev_rows = self.rows;
+
+                                    ui.label("ID / Passport Presets:");
+                                    if ui.button(RichText::new("Passport 2x2\" (6)").strong().color(Color32::from_rgb(100, 220, 140))).clicked() {
+                                        self.cols = 3; self.rows = 2; self.fit_mode = FitMode::Fill;
+                                    }
+                                    if ui.button(RichText::new("Passport 35x45mm (8)").strong().color(Color32::from_rgb(100, 220, 140))).clicked() {
+                                        self.cols = 4; self.rows = 2; self.fit_mode = FitMode::Fill;
+                                    }
+                                    if ui.button(RichText::new("Stamp 30x40mm (12)").strong().color(Color32::from_rgb(100, 220, 140))).clicked() {
+                                        self.cols = 4; self.rows = 3; self.fit_mode = FitMode::Fill;
+                                    }
 
                                     if self.cols != prev_cols || self.rows != prev_rows {
                                         self.save_config();
@@ -695,12 +733,26 @@ impl eframe::App for PhotoGridApp {
                                 }
                             });
 
-                            // 4. Margins, Gaps & Trimmer Cut Marks Card
+                            // 4. Margins, Spacing & Color Tone Filters Card
                             card_frame().show(ui, |ui| {
                                 ui.set_width(content_w);
-                                ui.label(RichText::new("4. Margins & Spacing").strong().color(Color32::from_rgb(220, 225, 240)));
+                                ui.label(RichText::new("4. Spacing, Tone & Trimming").strong().color(Color32::from_rgb(220, 225, 240)));
                                 ui.add_space(4.0);
 
+                                ui.horizontal(|ui| {
+                                    let prev_filter = self.color_filter;
+                                    ui.label("Color Tone:");
+                                    ui.radio_value(&mut self.color_filter, ColorFilter::Original, "Color");
+                                    ui.radio_value(&mut self.color_filter, ColorFilter::Grayscale, "Grayscale (B&W)");
+                                    ui.radio_value(&mut self.color_filter, ColorFilter::HighContrast, "High Contrast");
+
+                                    if self.color_filter != prev_filter {
+                                        self.save_config();
+                                        self.preview_dirty = true;
+                                    }
+                                });
+
+                                ui.add_space(3.0);
                                 ui.horizontal(|ui| {
                                     let prev_b = self.is_borderless;
                                     ui.radio_value(&mut self.is_borderless, false, "Spaced Margins & Gaps");
@@ -1036,6 +1088,8 @@ impl eframe::App for PhotoGridApp {
                 let mut should_close = false;
                 let mut should_delete = false;
                 let mut should_rotate = false;
+                let mut should_flip = false;
+                let mut should_swap = None;
 
                 egui::Window::new(format!("Photo #{} Settings", selected_idx + 1))
                     .fixed_pos(popup_pos + Vec2::new(-110.0, 10.0))
@@ -1064,10 +1118,6 @@ impl eframe::App for PhotoGridApp {
                                 item.copies += 1;
                                 self.preview_dirty = true;
                             }
-
-                            if ui.button("↻ Rotate 90°").clicked() {
-                                should_rotate = true;
-                            }
                         });
 
                         ui.add_space(2.0);
@@ -1079,6 +1129,22 @@ impl eframe::App for PhotoGridApp {
                             if ui.button("6x").clicked() { item.copies = 6; self.preview_dirty = true; }
                             if ui.button("8x").clicked() { item.copies = 8; self.preview_dirty = true; }
                             if ui.button("16x").clicked() { item.copies = 16; self.preview_dirty = true; }
+                        });
+
+                        ui.separator();
+                        ui.horizontal(|ui| {
+                            if ui.button("↻ 90° Rotate").clicked() {
+                                should_rotate = true;
+                            }
+                            if ui.button("⇄ Flip Mirror").clicked() {
+                                should_flip = true;
+                            }
+                            if selected_idx > 0 && ui.button("▲ Move Up").clicked() {
+                                should_swap = Some((selected_idx, selected_idx - 1));
+                            }
+                            if selected_idx + 1 < self.items.len() && ui.button("▼ Move Down").clicked() {
+                                should_swap = Some((selected_idx, selected_idx + 1));
+                            }
                         });
 
                         ui.separator();
@@ -1096,6 +1162,17 @@ impl eframe::App for PhotoGridApp {
 
                 if should_rotate {
                     self.items[selected_idx].image = self.items[selected_idx].image.rotate90();
+                    self.preview_dirty = true;
+                }
+
+                if should_flip {
+                    self.items[selected_idx].image = self.items[selected_idx].image.fliph();
+                    self.preview_dirty = true;
+                }
+
+                if let Some((a, b)) = should_swap {
+                    self.items.swap(a, b);
+                    self.selected_item_idx = Some(b);
                     self.preview_dirty = true;
                 }
 

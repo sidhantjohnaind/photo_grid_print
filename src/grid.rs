@@ -2,10 +2,19 @@ use crate::pdf::PdfPage;
 use image::{codecs::jpeg::JpegEncoder, imageops, DynamicImage, ImageBuffer, Rgb, RgbImage};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub enum FitMode {
+    #[default]
     Fill,    // Crop to fill cell completely (no white letterboxing)
     Contain, // Preserve full image (pad with white if needed)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+pub enum ColorFilter {
+    #[default]
+    Original,
+    Grayscale,
+    HighContrast,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
@@ -63,6 +72,7 @@ pub struct GridConfig {
     pub margin_y: u32,
     pub is_portrait: bool,
     pub fit_mode: FitMode,
+    pub color_filter: ColorFilter,
     pub show_cut_marks: bool,
     pub dpi: u32,
 }
@@ -80,6 +90,7 @@ impl Default for GridConfig {
             margin_y: 42,
             is_portrait: false,
             fit_mode: FitMode::Fill,
+            color_filter: ColorFilter::Original,
             show_cut_marks: false,
             dpi: 300,
         }
@@ -276,7 +287,23 @@ fn draw_cut_corner_marks(img: &mut RgbImage, x: u32, y: u32, w: u32, h: u32, len
 }
 
 fn prepare_cell(img: &DynamicImage, target_w: u32, target_h: u32, config: &GridConfig) -> RgbImage {
-    let rgb_img = img.to_rgb8();
+    let mut rgb_img = img.to_rgb8();
+
+    // Apply color filter if requested
+    match config.color_filter {
+        ColorFilter::Original => {}
+        ColorFilter::Grayscale => {
+            let gray = imageops::grayscale(&rgb_img);
+            rgb_img = DynamicImage::ImageLuma8(gray).to_rgb8();
+        }
+        ColorFilter::HighContrast => {
+            let gray = imageops::grayscale(&rgb_img);
+            let mut contrast_img = DynamicImage::ImageLuma8(gray).to_rgb8();
+            imageops::colorops::contrast_in_place(&mut contrast_img, 25.0);
+            rgb_img = contrast_img;
+        }
+    }
+
     let (src_w, src_h) = rgb_img.dimensions();
 
     let mut cell = match config.fit_mode {

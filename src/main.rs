@@ -164,6 +164,7 @@ fn main() -> Result<()> {
         margin_y: if args.borderless { 0 } else { 50 },
         is_portrait: args.portrait,
         fit_mode: if args.contain { FitMode::Contain } else { FitMode::Fill },
+        color_filter: grid::ColorFilter::Original,
         show_cut_marks: false,
         dpi: 300,
     };

@@ -1,4 +1,4 @@
-use crate::grid::{FitMode, PaperSize};
+use crate::grid::{ColorFilter, FitMode, PaperSize};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -15,6 +15,7 @@ pub struct AppConfig {
     pub is_borderless: bool,
     pub is_portrait: bool,
     pub fit_mode: FitMode,
+    pub color_filter: ColorFilter,
     pub show_cut_marks: bool,
     pub output_path: Option<String>,
     pub last_folder: Option<String>,
@@ -36,6 +37,7 @@ impl Default for AppConfig {
             is_borderless: false,
             is_portrait: false,
             fit_mode: FitMode::Fill,
+            color_filter: ColorFilter::Original,
             show_cut_marks: false,
             output_path: default_out,
             last_folder: None,

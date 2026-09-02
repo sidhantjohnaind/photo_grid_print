@@ -12,7 +12,6 @@ use image::{DynamicImage, GenericImageView};
 use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
-use std::process::Command;
 use walkdir::WalkDir;
 
 #[derive(Parser, Debug)]
@@ -213,9 +212,7 @@ fn main() -> Result<()> {
 
     if args.print {
         println!("Sending to printer...");
-        let _ = Command::new("powershell")
-            .args(["-Command", &format!("Start-Process -FilePath '{}' -Verb Print", output_path.display())])
-            .spawn();
+        gui::send_to_printer(&output_path);
     } else if !args.no_open {
         println!("Opening PDF...");
         let _ = open::that(&output_path);

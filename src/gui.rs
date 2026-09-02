@@ -100,15 +100,41 @@ impl Default for PhotoGridApp {
 impl PhotoGridApp {
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         let mut app = Self::default();
-        let browser_dir = PathBuf::from(r"D:\Downloads\Browser");
-        if browser_dir.exists() {
-            app.load_folder(&browser_dir, 16);
-        } else if let Some(last) = &app.last_folder {
+
+        // 1. Try restoring the user's last used folder from config
+        if let Some(last) = &app.last_folder {
             let p = PathBuf::from(last);
             if p.exists() {
                 app.load_folder(&p, 16);
+                return app;
             }
         }
+
+        // 2. Check dynamic user Downloads or Pictures folder
+        if let Some(dl) = dirs_downloads() {
+            let browser = dl.join("Browser");
+            if browser.exists() {
+                app.load_folder(&browser, 16);
+                return app;
+            } else if dl.exists() {
+                let has_images = WalkDir::new(&dl).max_depth(1).into_iter().filter_map(|e| e.ok()).any(|e| {
+                    e.path().extension().and_then(|ext| ext.to_str()).map_or(false, |ext| {
+                        ["jpg", "jpeg", "png", "webp", "bmp"].contains(&ext.to_lowercase().as_str())
+                    })
+                });
+                if has_images {
+                    app.load_folder(&dl, 16);
+                    return app;
+                }
+            }
+        }
+
+        if let Some(pics) = dirs_pictures() {
+            if pics.exists() {
+                app.load_folder(&pics, 16);
+            }
+        }
+
         app
     }
 
@@ -331,25 +357,90 @@ impl PhotoGridApp {
     }
 }
 
+/// 100% Dynamic Cross-Platform Direct Printing handler
 pub fn send_to_printer(pdf_path: &Path) {
-    let edge_paths = [
-        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-    ];
+    let pdf_str = pdf_path.to_string_lossy().to_string();
 
-    for path in &edge_paths {
-        if Path::new(path).exists() {
-            let res = Command::new(path)
-                .args(["/p", &pdf_path.to_string_lossy()])
-                .spawn();
-            if res.is_ok() {
-                return;
+    #[cfg(target_os = "windows")]
+    {
+        // 1. Try command line print runners dynamically
+        let candidates = [
+            "msedge",
+            "chrome",
+            "brave",
+            "SumatraPDF",
+            "AcroRd32",
+            "FoxitPDFReader",
+        ];
+
+        for cmd in &candidates {
+            if let Ok(child) = Command::new(cmd).args(["/p", &pdf_str]).spawn() {
+                if child.id() > 0 {
+                    return;
+                }
             }
+        }
+
+        // 2. Check standard environment-derived program directories dynamically
+        let mut search_dirs = Vec::new();
+        if let Some(pf) = std::env::var_os("ProgramFiles") {
+            search_dirs.push(PathBuf::from(pf));
+        }
+        if let Some(pf86) = std::env::var_os("ProgramFiles(x86)") {
+            search_dirs.push(PathBuf::from(pf86));
+        }
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            search_dirs.push(PathBuf::from(local));
+        }
+
+        let rel_paths = [
+            r"Microsoft\Edge\Application\msedge.exe",
+            r"Google\Chrome\Application\chrome.exe",
+            r"BraveSoftware\Brave-Browser\Application\brave.exe",
+            r"SumatraPDF\SumatraPDF.exe",
+            r"Adobe\Acrobat Reader DC\Reader\AcroRd32.exe",
+        ];
+
+        for base in &search_dirs {
+            for rel in &rel_paths {
+                let candidate = base.join(rel);
+                if candidate.exists() {
+                    if let Ok(child) = Command::new(&candidate).args(["/p", &pdf_str]).spawn() {
+                        if child.id() > 0 {
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Native Windows PowerShell print handler
+        let ps_res = Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                &format!("Start-Process -FilePath '{}' -Verb Print", pdf_str),
+            ])
+            .spawn();
+
+        if ps_res.is_ok() {
+            return;
         }
     }
 
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Linux / macOS standard lp/lpr print commands
+        if Command::new("lpr").arg(&pdf_str).spawn().is_ok() {
+            return;
+        }
+        if Command::new("lp").arg(&pdf_str).spawn().is_ok() {
+            return;
+        }
+    }
+
+    // Universal Fallback: Open with default PDF viewer
     let _ = open::that(pdf_path);
 }
 
@@ -456,9 +547,19 @@ impl eframe::App for PhotoGridApp {
                                         }
                                     }
 
-                                    let browser_dir = PathBuf::from(r"D:\Downloads\Browser");
-                                    if browser_dir.exists() && ui.button("WhatsApp (16)").clicked() {
-                                        self.load_folder(&browser_dir, 16);
+                                    if let Some(dl) = dirs_downloads() {
+                                        let browser = dl.join("Browser");
+                                        if browser.exists() && ui.button("Browser (16)").clicked() {
+                                            self.load_folder(&browser, 16);
+                                        } else if dl.exists() && ui.button("Downloads").clicked() {
+                                            self.load_folder(&dl, 16);
+                                        }
+                                    }
+
+                                    if let Some(pics) = dirs_pictures() {
+                                        if pics.exists() && ui.button("Pictures").clicked() {
+                                            self.load_folder(&pics, 16);
+                                        }
                                     }
 
                                     if !self.items.is_empty() && ui.button("Clear").clicked() {
@@ -1208,6 +1309,20 @@ pub fn run_gui() -> Result<(), eframe::Error> {
     )
 }
 
-fn dirs_desktop() -> Option<PathBuf> {
-    std::env::var_os("USERPROFILE").map(|p| PathBuf::from(p).join("Desktop"))
+pub fn dirs_downloads() -> Option<PathBuf> {
+    std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .map(|p| PathBuf::from(p).join("Downloads"))
+}
+
+pub fn dirs_pictures() -> Option<PathBuf> {
+    std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .map(|p| PathBuf::from(p).join("Pictures"))
+}
+
+pub fn dirs_desktop() -> Option<PathBuf> {
+    std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .map(|p| PathBuf::from(p).join("Desktop"))
 }

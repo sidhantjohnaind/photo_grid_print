@@ -129,22 +129,25 @@ fn main() -> Result<()> {
         }
     }
 
-    println!("Found {} image(s) to process.", image_paths.len());
+    println!("Found {} image(s). Loading across {} CPU worker threads...", image_paths.len(), rayon::current_num_threads());
 
-    let mut images: Vec<DynamicImage> = Vec::new();
-    for p in &image_paths {
-        print!("Loading: {}... ", p.file_name().unwrap_or_default().to_string_lossy());
-        io::stdout().flush().ok();
-        match image::open(p) {
-            Ok(img) => {
-                println!("OK ({:?})", img.dimensions());
-                images.push(img);
+    use rayon::prelude::*;
+    let images: Vec<DynamicImage> = image_paths
+        .par_iter()
+        .filter_map(|p| {
+            let name = p.file_name().unwrap_or_default().to_string_lossy();
+            match image::open(p) {
+                Ok(img) => {
+                    println!("  [OK] {} ({:?})", name, img.dimensions());
+                    Some(img)
+                }
+                Err(e) => {
+                    eprintln!("  [FAIL] {}: {}", p.display(), e);
+                    None
+                }
             }
-            Err(e) => {
-                println!("FAILED ({})", e);
-            }
-        }
-    }
+        })
+        .collect();
 
     if images.is_empty() {
         bail!("Could not load any images successfully.");

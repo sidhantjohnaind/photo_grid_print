@@ -508,7 +508,7 @@ impl eframe::App for PhotoGridApp {
         ui.horizontal(|ui| {
             ui.add_space(6.0);
             ui.heading(RichText::new("Photo Grid Print").size(19.0).strong().color(Color32::from_rgb(240, 240, 245)));
-            ui.label(RichText::new("|  Multi-Core 300 DPI Sheet Generator & Direct Print").size(12.0).color(Color32::from_rgb(150, 155, 170)));
+            ui.label(RichText::new(format!("|  Multi-Core ({} Threads) - 300 DPI Sheet Generator & Direct Print", rayon::current_num_threads())).size(12.0).color(Color32::from_rgb(150, 155, 170)));
             
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(8.0);

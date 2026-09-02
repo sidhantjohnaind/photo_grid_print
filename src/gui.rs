@@ -61,6 +61,12 @@ pub struct PhotoGridApp {
     // Clickable Individual Photo Modal / Popup
     pub selected_item_idx: Option<usize>,
     pub selected_popup_pos: Option<Pos2>,
+
+    // Live View Interactive Drag & Drop Reordering State
+    pub dragged_item_idx: Option<usize>,
+    pub drag_start_pos: Option<Pos2>,
+    pub is_actively_dragging: bool,
+    pub drag_target_idx: Option<usize>,
 }
 
 impl Default for PhotoGridApp {
@@ -95,6 +101,10 @@ impl Default for PhotoGridApp {
             view_mode: PreviewViewMode::AllPages,
             selected_item_idx: None,
             selected_popup_pos: None,
+            dragged_item_idx: None,
+            drag_start_pos: None,
+            is_actively_dragging: false,
+            drag_target_idx: None,
         }
     }
 }
@@ -477,7 +487,7 @@ impl eframe::App for PhotoGridApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
 
-        // Drag and drop handler
+        // Drag and drop file handler from outside OS
         ctx.input(|i| {
             if !i.raw.dropped_files.is_empty() {
                 let mut added_paths = Vec::new();
@@ -1022,9 +1032,9 @@ impl eframe::App for PhotoGridApp {
 
                     // Multi-page header bar
                     ui.horizontal(|ui| {
-                        ui.add_space(8.0);
+                        ui.add_space(6.0);
                         let summary_txt = format!(
-                            "Live Sheet Preview  •  {} Sheet{} ({} photos total • {}/page)",
+                            "Live Sheet Preview - {} Sheet{} ({} photos total | {}/page)",
                             self.total_pages,
                             if self.total_pages == 1 { "" } else { "s" },
                             total_photos,
@@ -1032,26 +1042,43 @@ impl eframe::App for PhotoGridApp {
                         );
                         ui.label(RichText::new(summary_txt).size(13.0).strong().color(Color32::from_rgb(220, 225, 240)));
 
-                        ui.label(RichText::new("(Click any photo on any page to edit)").size(11.0).color(Color32::from_rgb(0, 190, 240)));
+                        ui.add_space(4.0);
+                        ui.label(RichText::new("(Drag photos to reorder | Click to edit)").size(11.0).color(Color32::from_rgb(0, 190, 240)));
 
-                        if self.total_pages > 1 {
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                ui.add_space(8.0);
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.add_space(6.0);
 
-                                ui.selectable_value(&mut self.view_mode, PreviewViewMode::SinglePage, "Single Page");
-                                ui.selectable_value(&mut self.view_mode, PreviewViewMode::AllPages, "Scroll All Sheets");
-
-                                if self.view_mode == PreviewViewMode::SinglePage {
-                                    if ui.button("Next >").clicked() && self.preview_page_idx + 1 < self.total_pages {
+                            // Paging controls in Single Page mode
+                            if self.view_mode == PreviewViewMode::SinglePage && self.total_pages > 1 {
+                                if ui.button("Next >").clicked() {
+                                    if self.preview_page_idx + 1 < self.total_pages {
                                         self.preview_page_idx += 1;
                                     }
-                                    ui.label(RichText::new(format!("{}/{}", self.preview_page_idx + 1, self.total_pages)).strong());
-                                    if ui.button("< Prev").clicked() && self.preview_page_idx > 0 {
+                                }
+
+                                ui.label(RichText::new(format!("{}/{}", self.preview_page_idx + 1, self.total_pages)).strong().color(Color32::from_rgb(0, 200, 255)));
+
+                                if ui.button("< Prev").clicked() {
+                                    if self.preview_page_idx > 0 {
                                         self.preview_page_idx -= 1;
                                     }
                                 }
-                            });
-                        }
+
+                                ui.separator();
+                            }
+
+                            // View Mode Toggle Buttons (Always available)
+                            let is_all = self.view_mode == PreviewViewMode::AllPages;
+                            let is_single = self.view_mode == PreviewViewMode::SinglePage;
+
+                            if ui.selectable_label(is_all, "Scroll All Sheets").clicked() {
+                                self.view_mode = PreviewViewMode::AllPages;
+                            }
+
+                            if ui.selectable_label(is_single, "Single Page").clicked() {
+                                self.view_mode = PreviewViewMode::SinglePage;
+                            }
+                        });
                     });
 
                     ui.add_space(4.0);
@@ -1092,7 +1119,16 @@ impl eframe::App for PhotoGridApp {
 
                     let mut clicked_cell: Option<(usize, Pos2)> = None;
                     let mouse_pos = ctx.input(|i| i.pointer.hover_pos());
+                    let is_mouse_down = ctx.input(|i| i.pointer.primary_down());
                     let is_mouse_clicked = ctx.input(|i| i.pointer.primary_clicked());
+                    let is_mouse_released = ctx.input(|i| i.pointer.any_released());
+
+                    // Check if drag threshold exceeded
+                    if let (Some(origin), Some(curr_pos)) = (self.drag_start_pos, mouse_pos) {
+                        if is_mouse_down && origin.distance(curr_pos) > 6.0 {
+                            self.is_actively_dragging = true;
+                        }
+                    }
 
                     let scale = sheet_w as f64 / full_dpi_w;
                     let outer_margin_x = (config.margin_x as f64 * scale) as f32;
@@ -1169,22 +1205,48 @@ impl eframe::App for PhotoGridApp {
 
                                     let is_hovered = mouse_pos.map_or(false, |mp| cell_rect.contains(mp));
                                     let is_selected = self.selected_item_idx == Some(item_idx);
+                                    let is_dragged = self.is_actively_dragging && self.dragged_item_idx == Some(item_idx);
+                                    let is_drop_target = self.is_actively_dragging && self.drag_target_idx == Some(item_idx);
 
-                                    if is_hovered {
-                                        ctx.set_cursor_icon(CursorIcon::PointingHand);
-                                        painter.rect_filled(cell_rect, 2.0, Color32::from_rgba_premultiplied(0, 160, 255, 40));
-                                        painter.rect_stroke(cell_rect, 2.0, Stroke::new(2.5, Color32::from_rgb(0, 190, 255)), StrokeKind::Inside);
+                                    if self.is_actively_dragging {
+                                        if is_hovered {
+                                            self.drag_target_idx = Some(item_idx);
+                                        }
 
-                                        let badge_text = format!("#{}: Click to edit", item_idx + 1);
-                                        let badge_rect = Rect::from_min_size(cell_rect.min + Vec2::new(4.0, 4.0), Vec2::new(100.0, 20.0));
-                                        painter.rect_filled(badge_rect, 4.0, Color32::from_black_alpha(200));
-                                        painter.text(badge_rect.center(), Align2::CENTER_CENTER, badge_text, egui::FontId::proportional(10.0), Color32::WHITE);
-                                    } else if is_selected {
-                                        painter.rect_stroke(cell_rect, 2.0, Stroke::new(2.5, Color32::from_rgb(255, 180, 0)), StrokeKind::Inside);
-                                    }
+                                        if is_dragged {
+                                            painter.rect_filled(cell_rect, 2.0, Color32::from_black_alpha(150));
+                                            painter.rect_stroke(cell_rect, 2.0, Stroke::new(2.0, Color32::from_rgb(100, 110, 130)), StrokeKind::Inside);
+                                        } else if is_drop_target {
+                                            painter.rect_filled(cell_rect, 2.0, Color32::from_rgba_premultiplied(0, 200, 255, 60));
+                                            painter.rect_stroke(cell_rect, 2.0, Stroke::new(3.0, Color32::from_rgb(0, 220, 255)), StrokeKind::Inside);
 
-                                    if is_hovered && is_mouse_clicked {
-                                        clicked_cell = Some((item_idx, cell_rect.center_bottom()));
+                                            let badge = format!("Drop to move #{} here", self.dragged_item_idx.unwrap_or(0) + 1);
+                                            let badge_rect = Rect::from_min_size(cell_rect.min + Vec2::new(4.0, 4.0), Vec2::new(140.0, 20.0));
+                                            painter.rect_filled(badge_rect, 4.0, Color32::from_black_alpha(220));
+                                            painter.text(badge_rect.center(), Align2::CENTER_CENTER, badge, egui::FontId::proportional(10.0), Color32::from_rgb(0, 230, 255));
+                                        }
+                                    } else {
+                                        if is_hovered {
+                                            ctx.set_cursor_icon(CursorIcon::Grab);
+                                            painter.rect_filled(cell_rect, 2.0, Color32::from_rgba_premultiplied(0, 160, 255, 40));
+                                            painter.rect_stroke(cell_rect, 2.0, Stroke::new(2.5, Color32::from_rgb(0, 190, 255)), StrokeKind::Inside);
+
+                                            let badge_text = format!("#{}: Drag to move | Click to edit", item_idx + 1);
+                                            let badge_rect = Rect::from_min_size(cell_rect.min + Vec2::new(4.0, 4.0), Vec2::new(165.0, 20.0));
+                                            painter.rect_filled(badge_rect, 4.0, Color32::from_black_alpha(210));
+                                            painter.text(badge_rect.center(), Align2::CENTER_CENTER, badge_text, egui::FontId::proportional(9.5), Color32::WHITE);
+                                        } else if is_selected {
+                                            painter.rect_stroke(cell_rect, 2.0, Stroke::new(2.5, Color32::from_rgb(255, 180, 0)), StrokeKind::Inside);
+                                        }
+
+                                        if is_hovered && is_mouse_down && self.dragged_item_idx.is_none() {
+                                            self.dragged_item_idx = Some(item_idx);
+                                            self.drag_start_pos = mouse_pos;
+                                        }
+
+                                        if is_hovered && is_mouse_clicked {
+                                            clicked_cell = Some((item_idx, cell_rect.center_bottom()));
+                                        }
                                     }
                                 }
 
@@ -1192,10 +1254,48 @@ impl eframe::App for PhotoGridApp {
                             }
                         });
 
+                    // Handle Drag & Drop Drop Release
+                    if is_mouse_released {
+                        if self.is_actively_dragging {
+                            if let (Some(src), Some(dst)) = (self.dragged_item_idx, self.drag_target_idx) {
+                                if src != dst && src < self.items.len() && dst < self.items.len() {
+                                    let item = self.items.remove(src);
+                                    self.items.insert(dst, item);
+                                    self.selected_item_idx = Some(dst);
+                                    self.preview_dirty = true;
+                                    self.status_message = Some((
+                                        format!("Reordered: moved photo #{} to position #{}.", src + 1, dst + 1),
+                                        false,
+                                    ));
+                                }
+                            }
+                        }
+                        self.dragged_item_idx = None;
+                        self.drag_start_pos = None;
+                        self.is_actively_dragging = false;
+                        self.drag_target_idx = None;
+                    }
+
+                    // Floating cursor badge when dragging
+                    if self.is_actively_dragging {
+                        if let (Some(drag_idx), Some(cur_pos)) = (self.dragged_item_idx, mouse_pos) {
+                            ctx.set_cursor_icon(CursorIcon::Grabbing);
+                            let ghost_rect = Rect::from_center_size(cur_pos + Vec2::new(25.0, 25.0), Vec2::new(125.0, 30.0));
+                            let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("drag_ghost")));
+                            painter.rect_filled(ghost_rect, 6.0, Color32::from_black_alpha(230));
+                            painter.rect_stroke(ghost_rect, 6.0, Stroke::new(1.5, Color32::from_rgb(0, 200, 255)), StrokeKind::Outside);
+                            
+                            let label = format!("Moving Photo #{}", drag_idx + 1);
+                            painter.text(ghost_rect.center(), Align2::CENTER_CENTER, label, egui::FontId::proportional(11.0), Color32::WHITE);
+                        }
+                    }
+
                     if let Some((item_idx, pos)) = clicked_cell {
-                        self.selected_item_idx = Some(item_idx);
-                        self.selected_popup_pos = Some(pos);
-                        self.copies_mode = CopiesMode::Individual;
+                        if !self.is_actively_dragging {
+                            self.selected_item_idx = Some(item_idx);
+                            self.selected_popup_pos = Some(pos);
+                            self.copies_mode = CopiesMode::Individual;
+                        }
                     }
                 },
             );

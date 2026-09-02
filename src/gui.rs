@@ -7,6 +7,7 @@ use eframe::egui::{
     self, Align2, Color32, ColorImage, CornerRadius, CursorIcon, Frame, Margin, Pos2, Rect, RichText, Stroke, StrokeKind, TextureHandle, TextureOptions, Vec2,
 };
 use image::DynamicImage;
+use rayon::prelude::*;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -27,6 +28,7 @@ pub enum PreviewViewMode {
 pub struct PhotoItem {
     pub path: PathBuf,
     pub image: DynamicImage,
+    pub preview_cache: DynamicImage, // Downscaled 1200px cache for ultra-fast silky 60fps UI live preview
     pub copies: usize,
 }
 
@@ -158,17 +160,35 @@ impl PhotoGridApp {
         cfg.save();
     }
 
+    /// Parallel multi-core image decoding & downscaled preview caching
     fn add_paths(&mut self, paths: &[PathBuf]) {
-        for p in paths {
-            if let Ok(img) = image::open(p) {
-                self.items.push(PhotoItem {
-                    path: p.clone(),
-                    image: img,
-                    copies: self.global_copies,
-                });
-            }
+        let copies = self.global_copies;
+        let loaded: Vec<PhotoItem> = paths
+            .par_iter()
+            .filter_map(|p| {
+                if let Ok(img) = image::open(p) {
+                    let preview = if img.width() > 1200 || img.height() > 1200 {
+                        img.thumbnail(1200, 1200)
+                    } else {
+                        img.clone()
+                    };
+
+                    Some(PhotoItem {
+                        path: p.clone(),
+                        image: img,
+                        preview_cache: preview,
+                        copies,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if !loaded.is_empty() {
+            self.items.extend(loaded);
+            self.preview_dirty = true;
         }
-        self.preview_dirty = true;
     }
 
     fn load_folder(&mut self, dir: &PathBuf, max_count: usize) {
@@ -226,7 +246,20 @@ impl PhotoGridApp {
         }
     }
 
-    fn prepare_render_items(&self) -> Vec<(&DynamicImage, usize)> {
+    fn prepare_preview_items(&self) -> Vec<(&DynamicImage, usize)> {
+        self.items
+            .iter()
+            .map(|item| {
+                let copies = match self.copies_mode {
+                    CopiesMode::SameForAll => self.global_copies,
+                    CopiesMode::Individual => item.copies,
+                };
+                (&item.preview_cache, copies)
+            })
+            .collect()
+    }
+
+    fn prepare_full_render_items(&self) -> Vec<(&DynamicImage, usize)> {
         self.items
             .iter()
             .map(|item| {
@@ -264,18 +297,9 @@ impl PhotoGridApp {
             self.preview_page_idx = self.total_pages.saturating_sub(1);
         }
 
-        let render_items: Vec<(&DynamicImage, usize)> = self
-            .items
-            .iter()
-            .map(|item| {
-                let copies = match self.copies_mode {
-                    CopiesMode::SameForAll => self.global_copies,
-                    CopiesMode::Individual => item.copies,
-                };
-                (&item.image, copies)
-            })
-            .collect();
+        let render_items = self.prepare_preview_items();
 
+        // Multithreaded parallel rendering across all CPU cores
         let rgb_pages = render_all_preview_pages_with_copies(&render_items, &config, 1000);
         self.preview_textures.clear();
 
@@ -303,7 +327,7 @@ impl PhotoGridApp {
 
         self.save_config();
 
-        let render_items = self.prepare_render_items();
+        let render_items = self.prepare_full_render_items();
         let config = self.current_config();
 
         match render_images_with_copies_to_pdf_pages(&render_items, &config) {
@@ -363,7 +387,6 @@ pub fn send_to_printer(pdf_path: &Path) {
 
     #[cfg(target_os = "windows")]
     {
-        // 1. Try command line print runners dynamically
         let candidates = [
             "msedge",
             "chrome",
@@ -381,7 +404,6 @@ pub fn send_to_printer(pdf_path: &Path) {
             }
         }
 
-        // 2. Check standard environment-derived program directories dynamically
         let mut search_dirs = Vec::new();
         if let Some(pf) = std::env::var_os("ProgramFiles") {
             search_dirs.push(PathBuf::from(pf));
@@ -414,7 +436,6 @@ pub fn send_to_printer(pdf_path: &Path) {
             }
         }
 
-        // 3. Native Windows PowerShell print handler
         let ps_res = Command::new("powershell")
             .args([
                 "-NoProfile",
@@ -431,7 +452,6 @@ pub fn send_to_printer(pdf_path: &Path) {
 
     #[cfg(not(target_os = "windows"))]
     {
-        // Linux / macOS standard lp/lpr print commands
         if Command::new("lpr").arg(&pdf_str).spawn().is_ok() {
             return;
         }
@@ -440,7 +460,6 @@ pub fn send_to_printer(pdf_path: &Path) {
         }
     }
 
-    // Universal Fallback: Open with default PDF viewer
     let _ = open::that(pdf_path);
 }
 
@@ -489,11 +508,11 @@ impl eframe::App for PhotoGridApp {
         ui.horizontal(|ui| {
             ui.add_space(6.0);
             ui.heading(RichText::new("Photo Grid Print").size(19.0).strong().color(Color32::from_rgb(240, 240, 245)));
-            ui.label(RichText::new("|  High-Res 300 DPI Multi-Sheet Generator & Direct Print").size(12.0).color(Color32::from_rgb(150, 155, 170)));
+            ui.label(RichText::new("|  Multi-Core 300 DPI Sheet Generator & Direct Print").size(12.0).color(Color32::from_rgb(150, 155, 170)));
             
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(8.0);
-                if ui.small_button("⚙ Config").clicked() {
+                if ui.small_button("Config").clicked() {
                     let cfg_path = AppConfig::config_path();
                     let _ = open::that(cfg_path.parent().unwrap_or(&cfg_path));
                 }
@@ -576,7 +595,7 @@ impl eframe::App for PhotoGridApp {
                                 } else {
                                     ui.add_space(4.0);
                                     let count = self.items.len();
-                                    ui.label(RichText::new(format!("✓ {} photo(s) ready", count)).color(Color32::from_rgb(70, 200, 120)).strong());
+                                    ui.label(RichText::new(format!("Ready: {} photo(s)", count)).color(Color32::from_rgb(70, 200, 120)).strong());
 
                                     if self.copies_mode == CopiesMode::Individual {
                                         ui.add_space(3.0);
@@ -598,7 +617,7 @@ impl eframe::App for PhotoGridApp {
                                                         let name = item.path.file_name().unwrap_or_default().to_string_lossy();
                                                         
                                                         let num_label = if is_selected {
-                                                            RichText::new(format!("👉 {}.", idx + 1)).strong().color(Color32::from_rgb(0, 200, 255))
+                                                            RichText::new(format!("> {}.", idx + 1)).strong().color(Color32::from_rgb(0, 200, 255))
                                                         } else {
                                                             RichText::new(format!("{}.", idx + 1)).size(11.0).color(Color32::GRAY)
                                                         };
@@ -619,14 +638,14 @@ impl eframe::App for PhotoGridApp {
                                                         if ui.small_button("2x").clicked() { item.copies = 2; }
                                                         if ui.small_button("4x").clicked() { item.copies = 4; }
 
-                                                        if ui.small_button("↻ 90°").clicked() {
+                                                        if ui.small_button("Rot 90").clicked() {
                                                             to_rotate = Some(idx);
                                                         }
 
-                                                        if idx > 0 && ui.small_button("▲").clicked() {
+                                                        if idx > 0 && ui.small_button("^").clicked() {
                                                             to_swap = Some((idx, idx - 1));
                                                         }
-                                                        if idx + 1 < items_len && ui.small_button("▼").clicked() {
+                                                        if idx + 1 < items_len && ui.small_button("v").clicked() {
                                                             to_swap = Some((idx, idx + 1));
                                                         }
 
@@ -634,7 +653,7 @@ impl eframe::App for PhotoGridApp {
                                                             self.preview_dirty = true;
                                                         }
 
-                                                        if ui.small_button("x").clicked() {
+                                                        if ui.small_button("X").clicked() {
                                                             to_remove = Some(idx);
                                                         }
                                                     });
@@ -643,6 +662,7 @@ impl eframe::App for PhotoGridApp {
 
                                                 if let Some(idx) = to_rotate {
                                                     self.items[idx].image = self.items[idx].image.rotate90();
+                                                    self.items[idx].preview_cache = self.items[idx].preview_cache.rotate90();
                                                     self.preview_dirty = true;
                                                 }
 
@@ -998,7 +1018,7 @@ impl eframe::App for PhotoGridApp {
                 egui::Layout::top_down(egui::Align::Center),
                 |ui| {
                     let per_page = self.cols * self.rows;
-                    let total_photos: usize = self.prepare_render_items().iter().map(|(_, c)| *c).sum();
+                    let total_photos: usize = self.prepare_preview_items().iter().map(|(_, c)| *c).sum();
 
                     // Multi-page header bar
                     ui.horizontal(|ui| {
@@ -1022,11 +1042,11 @@ impl eframe::App for PhotoGridApp {
                                 ui.selectable_value(&mut self.view_mode, PreviewViewMode::AllPages, "Scroll All Sheets");
 
                                 if self.view_mode == PreviewViewMode::SinglePage {
-                                    if ui.button("Next ▶").clicked() && self.preview_page_idx + 1 < self.total_pages {
+                                    if ui.button("Next >").clicked() && self.preview_page_idx + 1 < self.total_pages {
                                         self.preview_page_idx += 1;
                                     }
                                     ui.label(RichText::new(format!("{}/{}", self.preview_page_idx + 1, self.total_pages)).strong());
-                                    if ui.button("◀ Prev").clicked() && self.preview_page_idx > 0 {
+                                    if ui.button("< Prev").clicked() && self.preview_page_idx > 0 {
                                         self.preview_page_idx -= 1;
                                     }
                                 }
@@ -1234,16 +1254,16 @@ impl eframe::App for PhotoGridApp {
 
                         ui.separator();
                         ui.horizontal(|ui| {
-                            if ui.button("↻ 90° Rotate").clicked() {
+                            if ui.button("Rotate 90").clicked() {
                                 should_rotate = true;
                             }
-                            if ui.button("⇄ Flip Mirror").clicked() {
+                            if ui.button("Flip Mirror").clicked() {
                                 should_flip = true;
                             }
-                            if selected_idx > 0 && ui.button("▲ Move Up").clicked() {
+                            if selected_idx > 0 && ui.button("^ Move Up").clicked() {
                                 should_swap = Some((selected_idx, selected_idx - 1));
                             }
-                            if selected_idx + 1 < self.items.len() && ui.button("▼ Move Down").clicked() {
+                            if selected_idx + 1 < self.items.len() && ui.button("v Move Down").clicked() {
                                 should_swap = Some((selected_idx, selected_idx + 1));
                             }
                         });
@@ -1263,11 +1283,13 @@ impl eframe::App for PhotoGridApp {
 
                 if should_rotate {
                     self.items[selected_idx].image = self.items[selected_idx].image.rotate90();
+                    self.items[selected_idx].preview_cache = self.items[selected_idx].preview_cache.rotate90();
                     self.preview_dirty = true;
                 }
 
                 if should_flip {
                     self.items[selected_idx].image = self.items[selected_idx].image.fliph();
+                    self.items[selected_idx].preview_cache = self.items[selected_idx].preview_cache.fliph();
                     self.preview_dirty = true;
                 }
 

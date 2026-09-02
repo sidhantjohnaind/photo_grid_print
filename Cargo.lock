@@ -3141,6 +3141,7 @@ dependencies = [
  "image",
  "lopdf",
  "open",
+ "rayon",
  "rfd",
  "serde",
  "serde_json",

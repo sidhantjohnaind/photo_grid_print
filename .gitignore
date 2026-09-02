@@ -1,0 +1,19 @@
+# Rust Build Artifacts
+/target/
+**/*.rs.bk
+*.exe
+
+# Generated PDFs & Test Exports
+*.pdf
+
+# Logs & Temporary Files
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE & Editor Configs
+.idea/
+.vscode/
+*.swp

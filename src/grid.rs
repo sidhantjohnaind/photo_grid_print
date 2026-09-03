@@ -98,6 +98,25 @@ impl Default for GridConfig {
     }
 }
 
+impl GridConfig {
+    pub fn cell_dimensions_mm(&self) -> (f64, f64) {
+        let (paper_w_mm, paper_h_mm) = self.paper_size.dimensions_mm(self.is_portrait);
+        let margin_x_mm = self.margin_x as f64 / self.dpi as f64 * 25.4;
+        let margin_y_mm = self.margin_y as f64 / self.dpi as f64 * 25.4;
+        let gap_mm = self.gap as f64 / self.dpi as f64 * 25.4;
+
+        let cols = self.cols.max(1) as f64;
+        let rows = self.rows.max(1) as f64;
+
+        let avail_w = (paper_w_mm - 2.0 * margin_x_mm).max(1.0);
+        let avail_h = (paper_h_mm - 2.0 * margin_y_mm).max(1.0);
+
+        let cell_w = (avail_w - (cols - 1.0) * gap_mm) / cols;
+        let cell_h = (avail_h - (rows - 1.0) * gap_mm) / rows;
+        (cell_w.max(0.0), cell_h.max(0.0))
+    }
+}
+
 /// Multithreaded Parallel 300 DPI PDF Page Generator using Rayon across all CPU cores
 pub fn render_images_with_copies_to_pdf_pages(
     items: &[(&DynamicImage, usize)],

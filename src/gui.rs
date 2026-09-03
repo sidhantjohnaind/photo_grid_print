@@ -25,11 +25,20 @@ pub enum PreviewViewMode {
     SinglePage,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum SidebarTab {
+    #[default]
+    Photos,
+    Layout,
+    Settings,
+}
+
 pub struct PhotoItem {
     pub path: PathBuf,
     pub image: DynamicImage,
     pub preview_cache: DynamicImage, // Downscaled 1200px cache for ultra-fast silky 60fps UI live preview
     pub copies: usize,
+    pub thumbnail_texture: Option<TextureHandle>,
 }
 
 pub struct PhotoGridApp {
@@ -50,6 +59,7 @@ pub struct PhotoGridApp {
     pub output_path: String,
     pub last_folder: Option<String>,
     pub status_message: Option<(String, bool)>,
+    pub sidebar_tab: SidebarTab,
 
     // Multi-Page Live Preview State
     pub preview_textures: Vec<TextureHandle>,
@@ -94,6 +104,7 @@ impl Default for PhotoGridApp {
             output_path: default_out,
             last_folder: cfg.last_folder,
             status_message: None,
+            sidebar_tab: SidebarTab::Photos,
             preview_textures: Vec::new(),
             preview_page_idx: 0,
             total_pages: 0,
@@ -110,7 +121,10 @@ impl Default for PhotoGridApp {
 }
 
 impl PhotoGridApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        // Apply ultra-clean modern slate dark theme
+        apply_modern_theme(&cc.egui_ctx);
+
         let mut app = Self::default();
 
         // 1. Try restoring the user's last used folder from config
@@ -188,6 +202,7 @@ impl PhotoGridApp {
                         image: img,
                         preview_cache: preview,
                         copies,
+                        thumbnail_texture: None,
                     })
                 } else {
                     None
@@ -473,15 +488,88 @@ pub fn send_to_printer(pdf_path: &Path) {
     let _ = open::that(pdf_path);
 }
 
-fn card_frame() -> Frame {
+// -----------------------------------------------------------------------------
+// Visual Styling & Cards
+// -----------------------------------------------------------------------------
+
+pub fn modern_card() -> Frame {
     Frame {
         inner_margin: Margin::same(12),
-        corner_radius: CornerRadius::same(6),
-        fill: Color32::from_rgb(26, 28, 34),
-        stroke: Stroke::new(1.0, Color32::from_rgb(45, 48, 58)),
+        corner_radius: CornerRadius::same(8),
+        fill: Color32::from_rgb(22, 25, 33), // Obsidian slate
+        stroke: Stroke::new(1.0, Color32::from_rgb(38, 43, 56)),
         ..Default::default()
     }
 }
+
+pub fn modern_card_highlight() -> Frame {
+    Frame {
+        inner_margin: Margin::same(12),
+        corner_radius: CornerRadius::same(8),
+        fill: Color32::from_rgb(26, 30, 42),
+        stroke: Stroke::new(1.0, Color32::from_rgb(52, 60, 80)),
+        ..Default::default()
+    }
+}
+
+pub fn apply_modern_theme(ctx: &egui::Context) {
+    let mut visuals = egui::Visuals::dark();
+    visuals.panel_fill = Color32::from_rgb(16, 18, 24);
+    visuals.window_fill = Color32::from_rgb(22, 25, 34);
+    visuals.extreme_bg_color = Color32::from_rgb(13, 14, 18);
+    visuals.override_text_color = Some(Color32::from_rgb(238, 242, 250));
+
+    visuals.widgets.noninteractive.corner_radius = CornerRadius::same(6);
+    visuals.widgets.inactive.corner_radius = CornerRadius::same(6);
+    visuals.widgets.hovered.corner_radius = CornerRadius::same(6);
+    visuals.widgets.active.corner_radius = CornerRadius::same(6);
+    visuals.widgets.open.corner_radius = CornerRadius::same(6);
+
+    visuals.widgets.inactive.bg_fill = Color32::from_rgb(28, 32, 43);
+    visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, Color32::from_rgb(46, 53, 68));
+
+    visuals.widgets.hovered.bg_fill = Color32::from_rgb(40, 46, 62);
+    visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgb(70, 80, 104));
+
+    visuals.widgets.active.bg_fill = Color32::from_rgb(37, 99, 235);
+    visuals.widgets.active.bg_stroke = Stroke::new(1.0, Color32::from_rgb(96, 165, 250));
+
+    visuals.selection.bg_fill = Color32::from_rgb(37, 99, 235);
+    visuals.selection.stroke = Stroke::new(1.0, Color32::from_rgb(96, 165, 250));
+
+    ctx.set_visuals(visuals);
+}
+
+fn segmented_tab_btn(ui: &mut egui::Ui, selected: bool, text: &str) -> egui::Response {
+    let (bg, text_color, stroke) = if selected {
+        (Color32::from_rgb(37, 99, 235), Color32::WHITE, Stroke::new(1.0, Color32::from_rgb(96, 165, 250)))
+    } else {
+        (Color32::from_rgb(24, 28, 38), Color32::from_rgb(160, 172, 195), Stroke::new(1.0, Color32::from_rgb(42, 48, 64)))
+    };
+    let btn = egui::Button::new(RichText::new(text).size(12.5).strong().color(text_color))
+        .fill(bg)
+        .stroke(stroke)
+        .corner_radius(CornerRadius::same(6))
+        .min_size(egui::vec2(0.0, 30.0));
+    ui.add(btn)
+}
+
+fn chip_btn(ui: &mut egui::Ui, active: bool, text: &str) -> egui::Response {
+    let (bg, text_color, stroke) = if active {
+        (Color32::from_rgb(37, 99, 235), Color32::WHITE, Stroke::new(1.0, Color32::from_rgb(96, 165, 250)))
+    } else {
+        (Color32::from_rgb(30, 34, 46), Color32::from_rgb(190, 200, 218), Stroke::new(1.0, Color32::from_rgb(48, 55, 72)))
+    };
+    let btn = egui::Button::new(RichText::new(text).size(11.5).strong().color(text_color))
+        .fill(bg)
+        .stroke(stroke)
+        .corner_radius(CornerRadius::same(5));
+    ui.add(btn)
+}
+
+// -----------------------------------------------------------------------------
+// App UI Loop
+// -----------------------------------------------------------------------------
 
 impl eframe::App for PhotoGridApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -514,507 +602,632 @@ impl eframe::App for PhotoGridApp {
             self.update_preview(&ctx);
         }
 
-        // Top App Bar
+        // ==========================================
+        // TOP APP BAR: Elegant studio header
+        // ==========================================
         ui.horizontal(|ui| {
-            ui.add_space(6.0);
-            ui.heading(RichText::new("Photo Grid Print").size(19.0).strong().color(Color32::from_rgb(240, 240, 245)));
-            ui.label(RichText::new(format!("|  Multi-Core ({} Threads) - 300 DPI Sheet Generator & Direct Print", rayon::current_num_threads())).size(12.0).color(Color32::from_rgb(150, 155, 170)));
-            
+            ui.add_space(8.0);
+            ui.heading(
+                RichText::new("PHOTO GRID PRINT")
+                    .size(17.0)
+                    .strong()
+                    .color(Color32::from_rgb(245, 248, 255)),
+            );
+
+            let core_text = format!("⚡ {} CPU Threads", rayon::current_num_threads());
+            ui.label(
+                RichText::new(core_text)
+                    .size(10.5)
+                    .color(Color32::from_rgb(56, 189, 248)),
+            );
+
+            let cfg = self.current_config();
+            let summary_chip = format!(
+                "{} • {}x{} Grid • 300 DPI",
+                cfg.paper_size.name().split(' ').next().unwrap_or("A4"),
+                cfg.cols,
+                cfg.rows
+            );
+            ui.label(
+                RichText::new(format!("|  {}", summary_chip))
+                    .size(11.5)
+                    .color(Color32::from_rgb(148, 163, 184)),
+            );
+
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.add_space(8.0);
-                if ui.small_button("Config").clicked() {
+                ui.add_space(10.0);
+                if ui.button(RichText::new("⚙ Config").size(12.0)).clicked() {
                     let cfg_path = AppConfig::config_path();
                     let _ = open::that(cfg_path.parent().unwrap_or(&cfg_path));
                 }
             });
         });
 
-        ui.add_space(2.0);
+        ui.add_space(3.0);
         ui.separator();
-        ui.add_space(4.0);
+        ui.add_space(3.0);
 
         let total_avail = ui.available_size();
-        let sidebar_width = (520.0_f32).min(total_avail.x * 0.48).max(440.0);
+        let sidebar_width = (480.0_f32).min(total_avail.x * 0.48).max(420.0);
 
         ui.horizontal(|ui| {
             // ==========================================
-            // LEFT SIDEBAR: Controls (Full Height Scroll)
+            // LEFT SIDEBAR: Pinned Actions + Clean Tabs
             // ==========================================
             ui.allocate_ui_with_layout(
                 egui::vec2(sidebar_width, total_avail.y),
                 egui::Layout::top_down(egui::Align::Min),
                 |ui| {
+                    let sidebar_avail = ui.available_size();
+                    let bottom_bar_height = 100.0;
+                    let scroll_height = (sidebar_avail.y - bottom_bar_height).max(200.0);
+
+                    // --- Tab Bar ---
+                    ui.horizontal(|ui| {
+                        let _tab_w = (sidebar_width - 16.0) / 3.0;
+
+                        let photos_label = format!("📷 Photos ({})", self.items.len());
+                        if segmented_tab_btn(ui, self.sidebar_tab == SidebarTab::Photos, &photos_label)
+                            .on_hover_text("Manage imported photos, copies, and order")
+                            .clicked()
+                        {
+                            self.sidebar_tab = SidebarTab::Photos;
+                        }
+
+                        if segmented_tab_btn(ui, self.sidebar_tab == SidebarTab::Layout, "📐 Layout & Grid")
+                            .on_hover_text("Paper sizes, passport presets, grid rows & cols")
+                            .clicked()
+                        {
+                            self.sidebar_tab = SidebarTab::Layout;
+                        }
+
+                        if segmented_tab_btn(ui, self.sidebar_tab == SidebarTab::Settings, "🎨 Style & Tone")
+                            .on_hover_text("Margins, photo gaps, trimmer marks, color filters")
+                            .clicked()
+                        {
+                            self.sidebar_tab = SidebarTab::Settings;
+                        }
+                    });
+
+                    ui.add_space(6.0);
+
+                    // --- Scrollable Tab Content ---
                     egui::ScrollArea::vertical()
-                        .id_salt("sidebar_scroll_area")
+                        .id_salt("sidebar_tab_scroll")
+                        .max_height(scroll_height)
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
                             ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
                             let content_w = sidebar_width - 18.0;
 
-                            // 1. Source Photos Card
-                            card_frame().show(ui, |ui| {
-                                ui.set_width(content_w);
-                                ui.horizontal(|ui| {
-                                    ui.label(RichText::new("1. Photos").strong().color(Color32::from_rgb(220, 225, 240)));
-                                    ui.label(RichText::new("(Drag & drop anywhere)").size(11.0).color(Color32::GRAY));
-                                });
+                            match self.sidebar_tab {
+                                // -------------------------------------------------------------
+                                // TAB 1: PHOTOS
+                                // -------------------------------------------------------------
+                                SidebarTab::Photos => {
+                                    // 1. Quick Add / Import Card
+                                    modern_card().show(ui, |ui| {
+                                        ui.set_width(content_w);
+                                        ui.horizontal(|ui| {
+                                            ui.label(RichText::new("Import Photos").strong().color(Color32::from_rgb(240, 244, 255)));
+                                            ui.label(RichText::new("(or drag & drop files)").size(11.0).color(Color32::from_rgb(140, 150, 170)));
+                                        });
 
-                                ui.add_space(4.0);
-                                ui.horizontal_wrapped(|ui| {
-                                    if ui.button("Select Files...").clicked() {
-                                        if let Some(files) = rfd::FileDialog::new()
-                                            .add_filter("Images", &["jpg", "jpeg", "png", "webp", "bmp"])
-                                            .pick_files()
-                                        {
-                                            self.add_paths(&files);
-                                        }
-                                    }
+                                        ui.add_space(4.0);
+                                        ui.horizontal_wrapped(|ui| {
+                                            if ui.add(egui::Button::new(RichText::new("+ Select Files...").strong()).fill(Color32::from_rgb(37, 99, 235))).clicked() {
+                                                if let Some(files) = rfd::FileDialog::new()
+                                                    .add_filter("Images", &["jpg", "jpeg", "png", "webp", "bmp"])
+                                                    .pick_files()
+                                                {
+                                                    self.add_paths(&files);
+                                                }
+                                            }
 
-                                    if ui.button("Select Folder...").clicked() {
-                                        if let Some(dir) = rfd::FileDialog::new().pick_folder() {
-                                            self.load_folder(&dir, 16);
-                                        }
-                                    }
+                                            if ui.button("📁 Folder...").clicked() {
+                                                if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+                                                    self.load_folder(&dir, 16);
+                                                }
+                                            }
 
-                                    if let Some(dl) = dirs_downloads() {
-                                        let browser = dl.join("Browser");
-                                        if browser.exists() && ui.button("Browser (16)").clicked() {
-                                            self.load_folder(&browser, 16);
-                                        } else if dl.exists() && ui.button("Downloads").clicked() {
-                                            self.load_folder(&dl, 16);
-                                        }
-                                    }
+                                            if let Some(dl) = dirs_downloads() {
+                                                let browser = dl.join("Browser");
+                                                if browser.exists() && ui.button("Browser (16)").clicked() {
+                                                    self.load_folder(&browser, 16);
+                                                } else if dl.exists() && ui.button("Downloads").clicked() {
+                                                    self.load_folder(&dl, 16);
+                                                }
+                                            }
 
-                                    if let Some(pics) = dirs_pictures() {
-                                        if pics.exists() && ui.button("Pictures").clicked() {
-                                            self.load_folder(&pics, 16);
-                                        }
-                                    }
+                                            if let Some(pics) = dirs_pictures() {
+                                                if pics.exists() && ui.button("Pictures").clicked() {
+                                                    self.load_folder(&pics, 16);
+                                                }
+                                            }
 
-                                    if !self.items.is_empty() && ui.button("Clear").clicked() {
-                                        self.items.clear();
-                                        self.selected_item_idx = None;
-                                        self.preview_dirty = true;
-                                        self.status_message = None;
-                                    }
-                                });
+                                            if !self.items.is_empty() && ui.button(RichText::new("Clear All").color(Color32::from_rgb(248, 113, 113))).clicked() {
+                                                self.items.clear();
+                                                self.selected_item_idx = None;
+                                                self.preview_dirty = true;
+                                                self.status_message = None;
+                                            }
+                                        });
+                                    });
 
-                                if self.items.is_empty() {
-                                    ui.add_space(4.0);
-                                    ui.label(RichText::new("No photos loaded. Drag & drop images here.").size(11.5).color(Color32::from_rgb(130, 135, 150)));
-                                } else {
-                                    ui.add_space(4.0);
-                                    let count = self.items.len();
-                                    ui.label(RichText::new(format!("Ready: {} photo(s)", count)).color(Color32::from_rgb(70, 200, 120)).strong());
+                                    // 2. Copies Settings Card
+                                    modern_card().show(ui, |ui| {
+                                        ui.set_width(content_w);
+                                        ui.horizontal(|ui| {
+                                            ui.label(RichText::new("Copies Mode:").strong().color(Color32::from_rgb(240, 244, 255)));
 
-                                    if self.copies_mode == CopiesMode::Individual {
-                                        ui.add_space(3.0);
-                                        ui.label(RichText::new("Individual Copies per Photo:").size(11.5).strong().color(Color32::from_rgb(190, 195, 210)));
-                                        
-                                        egui::ScrollArea::vertical()
-                                            .id_salt("individual_copies_scroll")
-                                            .max_height(140.0)
-                                            .show(ui, |ui| {
-                                                let mut to_remove = None;
-                                                let mut to_rotate = None;
-                                                let mut to_swap = None;
-                                                let items_len = self.items.len();
+                                            let is_all = self.copies_mode == CopiesMode::SameForAll;
+                                            let is_ind = self.copies_mode == CopiesMode::Individual;
 
-                                                for (idx, item) in self.items.iter_mut().enumerate() {
-                                                    let is_selected = self.selected_item_idx == Some(idx);
+                                            if chip_btn(ui, is_all, "Same for All").clicked() {
+                                                self.copies_mode = CopiesMode::SameForAll;
+                                                self.save_config();
+                                                self.preview_dirty = true;
+                                            }
+                                            if chip_btn(ui, is_ind, "Individual per Photo").clicked() {
+                                                self.copies_mode = CopiesMode::Individual;
+                                                self.save_config();
+                                                self.preview_dirty = true;
+                                            }
+                                        });
 
-                                                    ui.horizontal_wrapped(|ui| {
-                                                        let name = item.path.file_name().unwrap_or_default().to_string_lossy();
-                                                        
-                                                        let num_label = if is_selected {
-                                                            RichText::new(format!("> {}.", idx + 1)).strong().color(Color32::from_rgb(0, 200, 255))
-                                                        } else {
-                                                            RichText::new(format!("{}.", idx + 1)).size(11.0).color(Color32::GRAY)
-                                                        };
-                                                        ui.label(num_label);
-                                                        ui.add(egui::Label::new(RichText::new(name).size(11.0)).truncate());
+                                        ui.add_space(4.0);
+                                        if self.copies_mode == CopiesMode::SameForAll {
+                                            let prev_copies = self.global_copies;
 
-                                                        let prev_c = item.copies;
+                                            ui.horizontal(|ui| {
+                                                ui.label("Copies each:");
+                                                if ui.button("-").clicked() && self.global_copies > 1 {
+                                                    self.global_copies -= 1;
+                                                }
+                                                ui.add(egui::DragValue::new(&mut self.global_copies).range(1..=100));
+                                                if ui.button("+").clicked() && self.global_copies < 100 {
+                                                    self.global_copies += 1;
+                                                }
 
-                                                        if ui.small_button("-").clicked() && item.copies > 1 {
-                                                            item.copies -= 1;
+                                                ui.add_space(4.0);
+                                                for c in [1, 2, 3, 4, 6, 8, 16] {
+                                                    if chip_btn(ui, self.global_copies == c, &format!("{}x", c)).clicked() {
+                                                        self.global_copies = c;
+                                                    }
+                                                }
+                                            });
+
+                                            if self.global_copies != prev_copies {
+                                                for item in &mut self.items {
+                                                    item.copies = self.global_copies;
+                                                }
+                                                self.save_config();
+                                                self.preview_dirty = true;
+                                            }
+                                        } else {
+                                            ui.horizontal_wrapped(|ui| {
+                                                ui.label("Set all to:");
+                                                for c in [1, 2, 3, 4, 6, 8, 16] {
+                                                    if ui.button(format!("{}x", c)).clicked() {
+                                                        for item in &mut self.items {
+                                                            item.copies = c;
                                                         }
-                                                        ui.add(egui::DragValue::new(&mut item.copies).range(1..=100));
-                                                        if ui.small_button("+").clicked() && item.copies < 100 {
-                                                            item.copies += 1;
+                                                        self.preview_dirty = true;
+                                                    }
+                                                }
+                                            });
+                                        }
+                                    });
+
+                                    // 3. Photo List Cards
+                                    if self.items.is_empty() {
+                                        modern_card().show(ui, |ui| {
+                                            ui.set_width(content_w);
+                                            ui.vertical_centered(|ui| {
+                                                ui.add_space(30.0);
+                                                ui.label(RichText::new("No photos loaded yet").size(14.0).color(Color32::from_rgb(148, 163, 184)));
+                                                ui.label(RichText::new("Click '+ Select Files...' or drag & drop images here").size(11.5).color(Color32::GRAY));
+                                                ui.add_space(30.0);
+                                            });
+                                        });
+                                    } else {
+                                        let mut to_remove = None;
+                                        let mut to_rotate = None;
+                                        let mut to_swap = None;
+                                        let items_len = self.items.len();
+
+                                        for (idx, item) in self.items.iter_mut().enumerate() {
+                                            let is_selected = self.selected_item_idx == Some(idx);
+
+                                            // Ensure thumbnail texture exists
+                                            if item.thumbnail_texture.is_none() {
+                                                let thumb = item.preview_cache.thumbnail(64, 64);
+                                                let raw = thumb.to_rgb8().into_raw();
+                                                let img = ColorImage::from_rgb([thumb.width() as usize, thumb.height() as usize], &raw);
+                                                item.thumbnail_texture = Some(ctx.load_texture(format!("thumb_{}", idx), img, TextureOptions::LINEAR));
+                                            }
+
+                                            let frame = if is_selected { modern_card_highlight() } else { modern_card() };
+                                            frame.show(ui, |ui| {
+                                                ui.set_width(content_w);
+
+                                                ui.horizontal(|ui| {
+                                                    // Thumbnail
+                                                    if let Some(tex) = &item.thumbnail_texture {
+                                                        ui.image((tex.id(), egui::vec2(38.0, 38.0)));
+                                                    }
+
+                                                    ui.vertical(|ui| {
+                                                        ui.horizontal(|ui| {
+                                                            let num_label = format!("#{}", idx + 1);
+                                                            ui.label(RichText::new(num_label).strong().color(Color32::from_rgb(56, 189, 248)));
+
+                                                            let name = item.path.file_name().unwrap_or_default().to_string_lossy();
+                                                            ui.add(egui::Label::new(RichText::new(name).size(12.0).strong()).truncate());
+                                                        });
+
+                                                        let dims = format!("{} × {} px", item.image.width(), item.image.height());
+                                                        ui.label(RichText::new(dims).size(10.5).color(Color32::from_rgb(148, 163, 184)));
+                                                    });
+
+                                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                        if ui.small_button(RichText::new("X").color(Color32::from_rgb(248, 113, 113))).on_hover_text("Delete photo").clicked() {
+                                                            to_remove = Some(idx);
                                                         }
 
-                                                        if ui.small_button("1x").clicked() { item.copies = 1; }
-                                                        if ui.small_button("2x").clicked() { item.copies = 2; }
-                                                        if ui.small_button("4x").clicked() { item.copies = 4; }
+                                                        if idx + 1 < items_len && ui.small_button("v").on_hover_text("Move Down").clicked() {
+                                                            to_swap = Some((idx, idx + 1));
+                                                        }
+                                                        if idx > 0 && ui.small_button("^").on_hover_text("Move Up").clicked() {
+                                                            to_swap = Some((idx, idx - 1));
+                                                        }
 
-                                                        if ui.small_button("Rot 90").clicked() {
+                                                        if ui.small_button("Rot 90").on_hover_text("Rotate 90 degrees").clicked() {
                                                             to_rotate = Some(idx);
                                                         }
 
-                                                        if idx > 0 && ui.small_button("^").clicked() {
-                                                            to_swap = Some((idx, idx - 1));
+                                                        // Copies stepper
+                                                        let prev_c = item.copies;
+                                                        if ui.small_button("+").clicked() && item.copies < 100 {
+                                                            item.copies += 1;
                                                         }
-                                                        if idx + 1 < items_len && ui.small_button("v").clicked() {
-                                                            to_swap = Some((idx, idx + 1));
+                                                        ui.add(egui::DragValue::new(&mut item.copies).range(1..=100));
+                                                        if ui.small_button("-").clicked() && item.copies > 1 {
+                                                            item.copies -= 1;
                                                         }
 
                                                         if item.copies != prev_c {
                                                             self.preview_dirty = true;
                                                         }
-
-                                                        if ui.small_button("X").clicked() {
-                                                            to_remove = Some(idx);
-                                                        }
                                                     });
-                                                    ui.add_space(2.0);
-                                                }
+                                                });
+                                            });
+                                        }
 
-                                                if let Some(idx) = to_rotate {
-                                                    self.items[idx].image = self.items[idx].image.rotate90();
-                                                    self.items[idx].preview_cache = self.items[idx].preview_cache.rotate90();
-                                                    self.preview_dirty = true;
-                                                }
+                                        if let Some(idx) = to_rotate {
+                                            self.items[idx].image = self.items[idx].image.rotate90();
+                                            self.items[idx].preview_cache = self.items[idx].preview_cache.rotate90();
+                                            self.items[idx].thumbnail_texture = None;
+                                            self.preview_dirty = true;
+                                        }
 
-                                                if let Some((a, b)) = to_swap {
-                                                    self.items.swap(a, b);
-                                                    self.selected_item_idx = Some(b);
-                                                    self.preview_dirty = true;
-                                                }
+                                        if let Some((a, b)) = to_swap {
+                                            self.items.swap(a, b);
+                                            self.selected_item_idx = Some(b);
+                                            self.preview_dirty = true;
+                                        }
 
-                                                if let Some(idx) = to_remove {
-                                                    self.items.remove(idx);
-                                                    if self.selected_item_idx == Some(idx) {
-                                                        self.selected_item_idx = None;
-                                                    }
+                                        if let Some(idx) = to_remove {
+                                            self.items.remove(idx);
+                                            if self.selected_item_idx == Some(idx) {
+                                                self.selected_item_idx = None;
+                                            }
+                                            self.preview_dirty = true;
+                                        }
+                                    }
+                                }
+
+                                // -------------------------------------------------------------
+                                // TAB 2: LAYOUT & GRID
+                                // -------------------------------------------------------------
+                                SidebarTab::Layout => {
+                                    // Paper Size & Orientation
+                                    modern_card().show(ui, |ui| {
+                                        ui.set_width(content_w);
+                                        ui.label(RichText::new("Paper Size & Orientation").strong().color(Color32::from_rgb(240, 244, 255)));
+                                        ui.add_space(4.0);
+
+                                        ui.horizontal(|ui| {
+                                            ui.label("Paper:");
+                                            let prev_paper = self.paper_size;
+                                            egui::ComboBox::from_id_salt("paper_size_combo")
+                                                .selected_text(self.paper_size.name())
+                                                .show_ui(ui, |ui| {
+                                                    ui.selectable_value(&mut self.paper_size, PaperSize::A4, PaperSize::A4.name());
+                                                    ui.selectable_value(&mut self.paper_size, PaperSize::Letter, PaperSize::Letter.name());
+                                                    ui.selectable_value(&mut self.paper_size, PaperSize::Legal, PaperSize::Legal.name());
+                                                    ui.selectable_value(&mut self.paper_size, PaperSize::Photo4x6, PaperSize::Photo4x6.name());
+                                                    ui.selectable_value(&mut self.paper_size, PaperSize::Photo5x7, PaperSize::Photo5x7.name());
+                                                    ui.selectable_value(&mut self.paper_size, PaperSize::A3, PaperSize::A3.name());
+                                                    ui.selectable_value(&mut self.paper_size, PaperSize::A5, PaperSize::A5.name());
+                                                });
+                                            if self.paper_size != prev_paper {
+                                                self.save_config();
+                                                self.preview_dirty = true;
+                                            }
+                                        });
+
+                                        ui.add_space(4.0);
+                                        ui.horizontal(|ui| {
+                                            ui.label("Orientation:");
+                                            let prev_port = self.is_portrait;
+                                            if chip_btn(ui, !self.is_portrait, "Landscape").clicked() {
+                                                self.is_portrait = false;
+                                            }
+                                            if chip_btn(ui, self.is_portrait, "Portrait").clicked() {
+                                                self.is_portrait = true;
+                                            }
+                                            if self.is_portrait != prev_port {
+                                                self.save_config();
+                                                self.preview_dirty = true;
+                                            }
+                                        });
+                                    });
+
+                                    // Standard Grid Presets
+                                    modern_card().show(ui, |ui| {
+                                        ui.set_width(content_w);
+                                        ui.label(RichText::new("Grid Presets").strong().color(Color32::from_rgb(240, 244, 255)));
+                                        ui.add_space(4.0);
+
+                                        let prev_cols = self.cols;
+                                        let prev_rows = self.rows;
+
+                                        ui.horizontal_wrapped(|ui| {
+                                            if chip_btn(ui, self.cols == 4 && self.rows == 4, "16 (4x4)").clicked() { self.cols = 4; self.rows = 4; }
+                                            if chip_btn(ui, self.cols == 3 && self.rows == 3, "9 (3x3)").clicked() { self.cols = 3; self.rows = 3; }
+                                            if chip_btn(ui, self.cols == 4 && self.rows == 2, "8 (4x2)").clicked() { self.cols = 4; self.rows = 2; }
+                                            if chip_btn(ui, self.cols == 3 && self.rows == 2, "6 (3x2)").clicked() { self.cols = 3; self.rows = 2; }
+                                            if chip_btn(ui, self.cols == 2 && self.rows == 3, "6 (2x3)").clicked() { self.cols = 2; self.rows = 3; }
+                                            if chip_btn(ui, self.cols == 2 && self.rows == 2, "4 (2x2)").clicked() { self.cols = 2; self.rows = 2; }
+                                        });
+
+                                        if self.cols != prev_cols || self.rows != prev_rows {
+                                            self.save_config();
+                                            self.preview_dirty = true;
+                                        }
+
+                                        ui.add_space(6.0);
+                                        ui.label(RichText::new("ID / Passport Photo Sizes:").size(11.5).strong().color(Color32::from_rgb(148, 163, 184)));
+                                        ui.add_space(2.0);
+
+                                        let prev_cols = self.cols;
+                                        let prev_rows = self.rows;
+
+                                        ui.horizontal_wrapped(|ui| {
+                                            if chip_btn(ui, self.cols == 3 && self.rows == 2, "US Passport 2x2\" (6)").clicked() {
+                                                self.cols = 3; self.rows = 2; self.fit_mode = FitMode::Fill;
+                                            }
+                                            if chip_btn(ui, self.cols == 4 && self.rows == 2, "Passport 35x45mm (8)").clicked() {
+                                                self.cols = 4; self.rows = 2; self.fit_mode = FitMode::Fill;
+                                            }
+                                            if chip_btn(ui, self.cols == 4 && self.rows == 3, "Stamp 30x40mm (12)").clicked() {
+                                                self.cols = 4; self.rows = 3; self.fit_mode = FitMode::Fill;
+                                            }
+                                        });
+
+                                        if self.cols != prev_cols || self.rows != prev_rows {
+                                            self.save_config();
+                                            self.preview_dirty = true;
+                                        }
+                                    });
+
+                                    // Custom Columns & Rows
+                                    modern_card().show(ui, |ui| {
+                                        ui.set_width(content_w);
+                                        ui.label(RichText::new("Custom Grid & Fit").strong().color(Color32::from_rgb(240, 244, 255)));
+                                        ui.add_space(4.0);
+
+                                        let prev_cols = self.cols;
+                                        let prev_rows = self.rows;
+                                        let prev_fit = self.fit_mode;
+
+                                        ui.horizontal(|ui| {
+                                            ui.label("Columns:");
+                                            ui.add(egui::Slider::new(&mut self.cols, 1..=8));
+                                            ui.label("Rows:");
+                                            ui.add(egui::Slider::new(&mut self.rows, 1..=8));
+                                        });
+
+                                        ui.add_space(4.0);
+                                        ui.horizontal(|ui| {
+                                            ui.label("Image Fit:");
+                                            if chip_btn(ui, self.fit_mode == FitMode::Fill, "Fill (Crop to Cell)").clicked() {
+                                                self.fit_mode = FitMode::Fill;
+                                            }
+                                            if chip_btn(ui, self.fit_mode == FitMode::Contain, "Fit (Preserve Full)").clicked() {
+                                                self.fit_mode = FitMode::Contain;
+                                            }
+                                        });
+
+                                        if self.cols != prev_cols || self.rows != prev_rows || self.fit_mode != prev_fit {
+                                            self.save_config();
+                                            self.preview_dirty = true;
+                                        }
+                                    });
+                                }
+
+                                // -------------------------------------------------------------
+                                // TAB 3: STYLE & SETTINGS
+                                // -------------------------------------------------------------
+                                SidebarTab::Settings => {
+                                    // Spacing & Margins
+                                    modern_card().show(ui, |ui| {
+                                        ui.set_width(content_w);
+                                        ui.label(RichText::new("Spacing & Bleed").strong().color(Color32::from_rgb(240, 244, 255)));
+                                        ui.add_space(4.0);
+
+                                        ui.horizontal(|ui| {
+                                            let prev_b = self.is_borderless;
+                                            if chip_btn(ui, !self.is_borderless, "Spaced Margins").clicked() {
+                                                self.is_borderless = false;
+                                            }
+                                            if chip_btn(ui, self.is_borderless, "100% Full-Bleed").clicked() {
+                                                self.is_borderless = true;
+                                            }
+                                            if self.is_borderless != prev_b {
+                                                self.save_config();
+                                                self.preview_dirty = true;
+                                            }
+                                        });
+
+                                        if !self.is_borderless {
+                                            ui.add_space(4.0);
+                                            ui.horizontal(|ui| {
+                                                let prev_margin = self.margin;
+                                                ui.label("Margin:");
+                                                ui.add(egui::Slider::new(&mut self.margin, 0..=150).suffix(" px"));
+                                                if ui.small_button("0px").clicked() { self.margin = 0; }
+                                                if ui.small_button("50px").clicked() { self.margin = 50; }
+
+                                                if self.margin != prev_margin {
+                                                    self.save_config();
                                                     self.preview_dirty = true;
                                                 }
                                             });
-                                    }
-                                }
-                            });
 
-                            // 2. Paper Size & Grid Presets Card (with Passport/ID Sizes!)
-                            card_frame().show(ui, |ui| {
-                                ui.set_width(content_w);
-                                ui.label(RichText::new("2. Layout, Paper & Presets").strong().color(Color32::from_rgb(220, 225, 240)));
-                                ui.add_space(4.0);
+                                            ui.horizontal(|ui| {
+                                                let prev_gap = self.gap;
+                                                ui.label("Photo Gap:");
+                                                ui.add(egui::Slider::new(&mut self.gap, 0..=60).suffix(" px"));
+                                                if ui.small_button("0px").clicked() { self.gap = 0; }
+                                                if ui.small_button("24px").clicked() { self.gap = 24; }
 
-                                ui.horizontal(|ui| {
-                                    ui.label("Paper Size:");
-                                    let prev_paper = self.paper_size;
-                                    egui::ComboBox::from_id_salt("paper_size_combo")
-                                        .selected_text(self.paper_size.name())
-                                        .show_ui(ui, |ui| {
-                                            ui.selectable_value(&mut self.paper_size, PaperSize::A4, PaperSize::A4.name());
-                                            ui.selectable_value(&mut self.paper_size, PaperSize::Letter, PaperSize::Letter.name());
-                                            ui.selectable_value(&mut self.paper_size, PaperSize::Legal, PaperSize::Legal.name());
-                                            ui.selectable_value(&mut self.paper_size, PaperSize::Photo4x6, PaperSize::Photo4x6.name());
-                                            ui.selectable_value(&mut self.paper_size, PaperSize::Photo5x7, PaperSize::Photo5x7.name());
-                                            ui.selectable_value(&mut self.paper_size, PaperSize::A3, PaperSize::A3.name());
-                                            ui.selectable_value(&mut self.paper_size, PaperSize::A5, PaperSize::A5.name());
+                                                if self.gap != prev_gap {
+                                                    self.save_config();
+                                                    self.preview_dirty = true;
+                                                }
+                                            });
+
+                                            ui.add_space(2.0);
+                                            let prev_cut = self.show_cut_marks;
+                                            ui.checkbox(&mut self.show_cut_marks, "Trimmer / Cutting Corner Guides");
+                                            if self.show_cut_marks != prev_cut {
+                                                self.save_config();
+                                                self.preview_dirty = true;
+                                            }
+                                        }
+                                    });
+
+                                    // Color Tone Filters
+                                    modern_card().show(ui, |ui| {
+                                        ui.set_width(content_w);
+                                        ui.label(RichText::new("Color Filter").strong().color(Color32::from_rgb(240, 244, 255)));
+                                        ui.add_space(4.0);
+
+                                        let prev_filter = self.color_filter;
+                                        ui.horizontal(|ui| {
+                                            if chip_btn(ui, self.color_filter == ColorFilter::Original, "Color").clicked() {
+                                                self.color_filter = ColorFilter::Original;
+                                            }
+                                            if chip_btn(ui, self.color_filter == ColorFilter::Grayscale, "Grayscale (B&W)").clicked() {
+                                                self.color_filter = ColorFilter::Grayscale;
+                                            }
+                                            if chip_btn(ui, self.color_filter == ColorFilter::HighContrast, "High Contrast").clicked() {
+                                                self.color_filter = ColorFilter::HighContrast;
+                                            }
                                         });
-                                    if self.paper_size != prev_paper {
-                                        self.save_config();
-                                        self.preview_dirty = true;
-                                    }
-                                });
 
-                                ui.add_space(3.0);
-                                ui.horizontal_wrapped(|ui| {
-                                    let prev_cols = self.cols;
-                                    let prev_rows = self.rows;
-
-                                    ui.label("Grid Presets:");
-                                    if ui.button(RichText::new("16 (4x4)").strong()).clicked() { self.cols = 4; self.rows = 4; }
-                                    if ui.button(RichText::new("9 (3x3)").strong()).clicked() { self.cols = 3; self.rows = 3; }
-                                    if ui.button(RichText::new("8 (4x2)").strong()).clicked() { self.cols = 4; self.rows = 2; }
-                                    if ui.button(RichText::new("6 (3x2)").strong().color(Color32::from_rgb(0, 190, 230))).clicked() { self.cols = 3; self.rows = 2; }
-                                    if ui.button(RichText::new("6 (2x3)").strong().color(Color32::from_rgb(0, 190, 230))).clicked() { self.cols = 2; self.rows = 3; }
-                                    if ui.button(RichText::new("4 (2x2)").strong()).clicked() { self.cols = 2; self.rows = 2; }
-
-                                    if self.cols != prev_cols || self.rows != prev_rows {
-                                        self.save_config();
-                                        self.preview_dirty = true;
-                                    }
-                                });
-
-                                ui.add_space(2.0);
-                                ui.horizontal_wrapped(|ui| {
-                                    let prev_cols = self.cols;
-                                    let prev_rows = self.rows;
-
-                                    ui.label("ID / Passport Presets:");
-                                    if ui.button(RichText::new("Passport 2x2\" (6)").strong().color(Color32::from_rgb(100, 220, 140))).clicked() {
-                                        self.cols = 3; self.rows = 2; self.fit_mode = FitMode::Fill;
-                                    }
-                                    if ui.button(RichText::new("Passport 35x45mm (8)").strong().color(Color32::from_rgb(100, 220, 140))).clicked() {
-                                        self.cols = 4; self.rows = 2; self.fit_mode = FitMode::Fill;
-                                    }
-                                    if ui.button(RichText::new("Stamp 30x40mm (12)").strong().color(Color32::from_rgb(100, 220, 140))).clicked() {
-                                        self.cols = 4; self.rows = 3; self.fit_mode = FitMode::Fill;
-                                    }
-
-                                    if self.cols != prev_cols || self.rows != prev_rows {
-                                        self.save_config();
-                                        self.preview_dirty = true;
-                                    }
-                                });
-
-                                ui.add_space(3.0);
-                                ui.horizontal(|ui| {
-                                    let prev_cols = self.cols;
-                                    let prev_rows = self.rows;
-
-                                    ui.label("Cols:");
-                                    ui.add(egui::Slider::new(&mut self.cols, 1..=8));
-                                    ui.label("Rows:");
-                                    ui.add(egui::Slider::new(&mut self.rows, 1..=8));
-
-                                    if self.cols != prev_cols || self.rows != prev_rows {
-                                        self.save_config();
-                                        self.preview_dirty = true;
-                                    }
-                                });
-                            });
-
-                            // 3. Copies Settings Card
-                            card_frame().show(ui, |ui| {
-                                ui.set_width(content_w);
-                                ui.label(RichText::new("3. Copies Settings").strong().color(Color32::from_rgb(220, 225, 240)));
-                                ui.add_space(4.0);
-
-                                ui.horizontal(|ui| {
-                                    let prev_mode = self.copies_mode;
-                                    ui.radio_value(&mut self.copies_mode, CopiesMode::SameForAll, "All Same");
-                                    ui.radio_value(&mut self.copies_mode, CopiesMode::Individual, "Individual per Photo");
-                                    if self.copies_mode != prev_mode {
-                                        self.save_config();
-                                        self.preview_dirty = true;
-                                    }
-                                });
-
-                                ui.add_space(3.0);
-                                if self.copies_mode == CopiesMode::SameForAll {
-                                    let prev_copies = self.global_copies;
-
-                                    ui.horizontal(|ui| {
-                                        ui.label("Copies each:");
-                                        if ui.button("-").clicked() && self.global_copies > 1 {
-                                            self.global_copies -= 1;
-                                        }
-                                        ui.add(egui::DragValue::new(&mut self.global_copies).range(1..=100));
-                                        if ui.button("+").clicked() && self.global_copies < 100 {
-                                            self.global_copies += 1;
-                                        }
-                                    });
-
-                                    ui.add_space(2.0);
-                                    ui.horizontal_wrapped(|ui| {
-                                        ui.label("Quick set:");
-                                        if ui.button("1x").clicked() { self.global_copies = 1; }
-                                        if ui.button("2x").clicked() { self.global_copies = 2; }
-                                        if ui.button("3x").clicked() { self.global_copies = 3; }
-                                        if ui.button("4x").clicked() { self.global_copies = 4; }
-                                        if ui.button("5x").clicked() { self.global_copies = 5; }
-                                        if ui.button("6x").clicked() { self.global_copies = 6; }
-                                        if ui.button("8x").clicked() { self.global_copies = 8; }
-                                        if ui.button("16x").clicked() { self.global_copies = 16; }
-                                    });
-
-                                    if self.global_copies != prev_copies {
-                                        for item in &mut self.items {
-                                            item.copies = self.global_copies;
-                                        }
-                                        self.save_config();
-                                        self.preview_dirty = true;
-                                    }
-                                } else {
-                                    ui.horizontal_wrapped(|ui| {
-                                        ui.label("Batch set all:");
-                                        if ui.button("1x").clicked() {
-                                            for item in &mut self.items { item.copies = 1; }
-                                            self.preview_dirty = true;
-                                        }
-                                        if ui.button("2x").clicked() {
-                                            for item in &mut self.items { item.copies = 2; }
-                                            self.preview_dirty = true;
-                                        }
-                                        if ui.button("3x").clicked() {
-                                            for item in &mut self.items { item.copies = 3; }
-                                            self.preview_dirty = true;
-                                        }
-                                        if ui.button("4x").clicked() {
-                                            for item in &mut self.items { item.copies = 4; }
-                                            self.preview_dirty = true;
-                                        }
-                                        if ui.button("6x").clicked() {
-                                            for item in &mut self.items { item.copies = 6; }
-                                            self.preview_dirty = true;
-                                        }
-                                        if ui.button("8x").clicked() {
-                                            for item in &mut self.items { item.copies = 8; }
-                                            self.preview_dirty = true;
-                                        }
-                                        if ui.button("16x").clicked() {
-                                            for item in &mut self.items { item.copies = 16; }
-                                            self.preview_dirty = true;
-                                        }
-                                    });
-                                }
-                            });
-
-                            // 4. Margins, Spacing & Color Tone Filters Card
-                            card_frame().show(ui, |ui| {
-                                ui.set_width(content_w);
-                                ui.label(RichText::new("4. Spacing, Tone & Trimming").strong().color(Color32::from_rgb(220, 225, 240)));
-                                ui.add_space(4.0);
-
-                                ui.horizontal(|ui| {
-                                    let prev_filter = self.color_filter;
-                                    ui.label("Color Tone:");
-                                    ui.radio_value(&mut self.color_filter, ColorFilter::Original, "Color");
-                                    ui.radio_value(&mut self.color_filter, ColorFilter::Grayscale, "Grayscale (B&W)");
-                                    ui.radio_value(&mut self.color_filter, ColorFilter::HighContrast, "High Contrast");
-
-                                    if self.color_filter != prev_filter {
-                                        self.save_config();
-                                        self.preview_dirty = true;
-                                    }
-                                });
-
-                                ui.add_space(3.0);
-                                ui.horizontal(|ui| {
-                                    let prev_b = self.is_borderless;
-                                    ui.radio_value(&mut self.is_borderless, false, "Spaced Margins & Gaps");
-                                    ui.radio_value(&mut self.is_borderless, true, "100% Full-Bleed");
-                                    if self.is_borderless != prev_b {
-                                        self.save_config();
-                                        self.preview_dirty = true;
-                                    }
-                                });
-
-                                ui.add_space(2.0);
-                                if !self.is_borderless {
-                                    ui.horizontal(|ui| {
-                                        let prev_margin = self.margin;
-                                        ui.label("Page Margin:");
-                                        ui.add(egui::Slider::new(&mut self.margin, 0..=150).suffix(" px"));
-                                        if ui.button("0px (No Margin)").clicked() { self.margin = 0; }
-                                        if ui.button("50px").clicked() { self.margin = 50; }
-
-                                        if self.margin != prev_margin {
+                                        if self.color_filter != prev_filter {
                                             self.save_config();
                                             self.preview_dirty = true;
                                         }
                                     });
 
-                                    ui.horizontal(|ui| {
-                                        let prev_gap = self.gap;
-                                        ui.label("Photo Gap:");
-                                        ui.add(egui::Slider::new(&mut self.gap, 0..=60).suffix(" px"));
-                                        if ui.button("0px (Touching)").clicked() { self.gap = 0; }
-                                        if ui.button("24px").clicked() { self.gap = 24; }
+                                    // Output Save Path
+                                    modern_card().show(ui, |ui| {
+                                        ui.set_width(content_w);
+                                        ui.label(RichText::new("Output Destination").strong().color(Color32::from_rgb(240, 244, 255)));
+                                        ui.add_space(4.0);
 
-                                        if self.gap != prev_gap {
-                                            self.save_config();
-                                            self.preview_dirty = true;
-                                        }
+                                        ui.horizontal(|ui| {
+                                            let prev_out = self.output_path.clone();
+                                            ui.text_edit_singleline(&mut self.output_path);
+                                            if ui.button("Browse...").clicked() {
+                                                if let Some(dest) = rfd::FileDialog::new()
+                                                    .set_file_name("Photo_Grid_Print.pdf")
+                                                    .add_filter("PDF Document", &["pdf"])
+                                                    .save_file()
+                                                {
+                                                    self.output_path = dest.to_string_lossy().to_string();
+                                                }
+                                            }
+                                            if self.output_path != prev_out {
+                                                self.save_config();
+                                            }
+                                        });
                                     });
-
-                                    ui.horizontal(|ui| {
-                                        let prev_cut = self.show_cut_marks;
-                                        ui.checkbox(&mut self.show_cut_marks, "Trimmer / Cutting Corner Guides");
-                                        if self.show_cut_marks != prev_cut {
-                                            self.save_config();
-                                            self.preview_dirty = true;
-                                        }
-                                    });
                                 }
-
-                                ui.horizontal(|ui| {
-                                    let prev_port = self.is_portrait;
-                                    let prev_fit = self.fit_mode;
-
-                                    ui.label("Orientation:");
-                                    ui.radio_value(&mut self.is_portrait, false, "Landscape");
-                                    ui.radio_value(&mut self.is_portrait, true, "Portrait");
-
-                                    ui.label("Fit:");
-                                    ui.radio_value(&mut self.fit_mode, FitMode::Fill, "Fill");
-                                    ui.radio_value(&mut self.fit_mode, FitMode::Contain, "Fit");
-
-                                    if self.is_portrait != prev_port || self.fit_mode != prev_fit {
-                                        self.save_config();
-                                        self.preview_dirty = true;
-                                    }
-                                });
-                            });
-
-                            // 5. Save Path Card
-                            card_frame().show(ui, |ui| {
-                                ui.set_width(content_w);
-                                ui.label(RichText::new("5. Save Destination").strong().color(Color32::from_rgb(220, 225, 240)));
-                                ui.add_space(3.0);
-                                ui.horizontal(|ui| {
-                                    let prev_out = self.output_path.clone();
-                                    ui.text_edit_singleline(&mut self.output_path);
-                                    if ui.button("Browse...").clicked() {
-                                        if let Some(dest) = rfd::FileDialog::new()
-                                            .set_file_name("Photo_Grid_Print.pdf")
-                                            .add_filter("PDF Document", &["pdf"])
-                                            .save_file()
-                                        {
-                                            self.output_path = dest.to_string_lossy().to_string();
-                                        }
-                                    }
-                                    if self.output_path != prev_out {
-                                        self.save_config();
-                                    }
-                                });
-                            });
-
-                            // 6. Primary Action Buttons
-                            ui.add_space(4.0);
-                            let btn_w = (content_w - 8.0) / 2.0;
-
-                            ui.horizontal(|ui| {
-                                let print_btn = egui::Button::new(
-                                    RichText::new("Print Now")
-                                        .size(15.0)
-                                        .strong()
-                                        .color(Color32::WHITE),
-                                )
-                                .fill(Color32::from_rgb(0, 130, 220))
-                                .min_size(egui::vec2(btn_w, 40.0));
-
-                                if ui.add(print_btn).clicked() {
-                                    self.generate_and_handle_pdf(true);
-                                }
-
-                                let pdf_btn = egui::Button::new(
-                                    RichText::new("Save & Open PDF")
-                                        .size(15.0)
-                                        .strong(),
-                                )
-                                .min_size(egui::vec2(btn_w, 40.0));
-
-                                if ui.add(pdf_btn).clicked() {
-                                    self.generate_and_handle_pdf(false);
-                                }
-                            });
-
-                            if let Some((msg, is_err)) = &self.status_message {
-                                ui.add_space(3.0);
-                                let color = if *is_err {
-                                    Color32::from_rgb(230, 70, 70)
-                                } else {
-                                    Color32::from_rgb(60, 200, 100)
-                                };
-                                ui.label(RichText::new(msg).color(color).strong());
                             }
-                            ui.add_space(12.0);
                         });
+
+                    // ==============================================================
+                    // PINNED BOTTOM ACTION BAR (Always visible in sidebar!)
+                    // ==============================================================
+                    ui.separator();
+                    ui.add_space(2.0);
+
+                    let btn_w = (sidebar_width - 24.0) / 2.0;
+                    ui.horizontal(|ui| {
+                        let print_btn = egui::Button::new(
+                            RichText::new("Print Now")
+                                .size(14.5)
+                                .strong()
+                                .color(Color32::WHITE),
+                        )
+                        .fill(Color32::from_rgb(37, 99, 235))
+                        .stroke(Stroke::new(1.0, Color32::from_rgb(96, 165, 250)))
+                        .corner_radius(CornerRadius::same(7))
+                        .min_size(egui::vec2(btn_w, 38.0));
+
+                        if ui.add(print_btn).clicked() {
+                            self.generate_and_handle_pdf(true);
+                        }
+
+                        let pdf_btn = egui::Button::new(
+                            RichText::new("Save & Open PDF")
+                                .size(14.5)
+                                .strong()
+                                .color(Color32::WHITE),
+                        )
+                        .fill(Color32::from_rgb(40, 46, 60))
+                        .stroke(Stroke::new(1.0, Color32::from_rgb(60, 70, 92)))
+                        .corner_radius(CornerRadius::same(7))
+                        .min_size(egui::vec2(btn_w, 38.0));
+
+                        if ui.add(pdf_btn).clicked() {
+                            self.generate_and_handle_pdf(false);
+                        }
+                    });
+
+                    if let Some((msg, is_err)) = &self.status_message {
+                        ui.add_space(3.0);
+                        let (bg, stroke, text_c) = if *is_err {
+                            (Color32::from_rgba_premultiplied(239, 68, 68, 35), Color32::from_rgb(239, 68, 68), Color32::from_rgb(252, 165, 165))
+                        } else {
+                            (Color32::from_rgba_premultiplied(34, 197, 94, 35), Color32::from_rgb(34, 197, 94), Color32::from_rgb(134, 239, 172))
+                        };
+
+                        Frame::default()
+                            .fill(bg)
+                            .stroke(Stroke::new(1.0, stroke))
+                            .corner_radius(CornerRadius::same(5))
+                            .inner_margin(Margin::symmetric(8, 4))
+                            .show(ui, |ui| {
+                                ui.set_width(sidebar_width - 24.0);
+                                ui.label(RichText::new(msg).size(11.5).strong().color(text_c));
+                            });
+                    }
                 },
             );
 
@@ -1029,24 +1242,40 @@ impl eframe::App for PhotoGridApp {
                 |ui| {
                     let per_page = self.cols * self.rows;
                     let total_photos: usize = self.prepare_preview_items().iter().map(|(_, c)| *c).sum();
+                    let config = self.current_config();
+                    let (cell_w_mm, cell_h_mm) = config.cell_dimensions_mm();
+                    let cell_w_in = cell_w_mm / 25.4;
+                    let cell_h_in = cell_h_mm / 25.4;
 
                     // Multi-page header bar
                     ui.horizontal(|ui| {
-                        ui.add_space(6.0);
-                        let summary_txt = format!(
-                            "Live Sheet Preview - {} Sheet{} ({} photos total | {}/page)",
-                            self.total_pages,
-                            if self.total_pages == 1 { "" } else { "s" },
-                            total_photos,
-                            per_page
+                        ui.add_space(8.0);
+                        ui.label(
+                            RichText::new("Live Sheet Preview")
+                                .size(14.0)
+                                .strong()
+                                .color(Color32::from_rgb(240, 244, 255)),
                         );
-                        ui.label(RichText::new(summary_txt).size(13.0).strong().color(Color32::from_rgb(220, 225, 240)));
 
-                        ui.add_space(4.0);
-                        ui.label(RichText::new("(Drag photos to reorder | Click to edit)").size(11.0).color(Color32::from_rgb(0, 190, 240)));
+                        // Physical cell dimensions pill
+                        let dim_text = format!(
+                            "Cell: {:.1} × {:.1} mm ({:.2} × {:.2} in)",
+                            cell_w_mm, cell_h_mm, cell_w_in, cell_h_in
+                        );
+                        ui.label(
+                            RichText::new(dim_text)
+                                .size(11.5)
+                                .color(Color32::from_rgb(56, 189, 248)),
+                        );
+
+                        ui.label(
+                            RichText::new(format!("• {} photos total ({} / sheet)", total_photos, per_page))
+                                .size(11.5)
+                                .color(Color32::from_rgb(148, 163, 184)),
+                        );
 
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.add_space(6.0);
+                            ui.add_space(8.0);
 
                             // Paging controls in Single Page mode
                             if self.view_mode == PreviewViewMode::SinglePage && self.total_pages > 1 {
@@ -1056,7 +1285,11 @@ impl eframe::App for PhotoGridApp {
                                     }
                                 }
 
-                                ui.label(RichText::new(format!("{}/{}", self.preview_page_idx + 1, self.total_pages)).strong().color(Color32::from_rgb(0, 200, 255)));
+                                ui.label(
+                                    RichText::new(format!("{}/{}", self.preview_page_idx + 1, self.total_pages))
+                                        .strong()
+                                        .color(Color32::from_rgb(56, 189, 248)),
+                                );
 
                                 if ui.button("< Prev").clicked() {
                                     if self.preview_page_idx > 0 {
@@ -1067,15 +1300,15 @@ impl eframe::App for PhotoGridApp {
                                 ui.separator();
                             }
 
-                            // View Mode Toggle Buttons (Always available)
+                            // View Mode Toggle Buttons
                             let is_all = self.view_mode == PreviewViewMode::AllPages;
                             let is_single = self.view_mode == PreviewViewMode::SinglePage;
 
-                            if ui.selectable_label(is_all, "Scroll All Sheets").clicked() {
+                            if chip_btn(ui, is_all, "Scroll All Sheets").clicked() {
                                 self.view_mode = PreviewViewMode::AllPages;
                             }
 
-                            if ui.selectable_label(is_single, "Single Page").clicked() {
+                            if chip_btn(ui, is_single, "Single Page").clicked() {
                                 self.view_mode = PreviewViewMode::SinglePage;
                             }
                         });
@@ -1086,9 +1319,18 @@ impl eframe::App for PhotoGridApp {
                     if self.preview_textures.is_empty() {
                         ui.vertical_centered(|ui| {
                             ui.add_space(160.0);
-                            ui.label(RichText::new("No Images Loaded").size(18.0).color(Color32::from_rgb(140, 145, 160)));
+                            ui.label(
+                                RichText::new("No Photos Loaded")
+                                    .size(19.0)
+                                    .strong()
+                                    .color(Color32::from_rgb(148, 163, 184)),
+                            );
                             ui.add_space(6.0);
-                            ui.label(RichText::new("Drag & drop photos or click 'Select Files...' to see live sheet preview").size(13.0).color(Color32::from_rgb(100, 105, 120)));
+                            ui.label(
+                                RichText::new("Drag & drop image files anywhere or click '+ Select Files...' to preview sheets live")
+                                    .size(13.0)
+                                    .color(Color32::from_rgb(100, 116, 139)),
+                            );
                         });
                         return;
                     }
@@ -1106,7 +1348,6 @@ impl eframe::App for PhotoGridApp {
                     }
 
                     let items_per_page = (self.cols * self.rows).max(1);
-                    let config = self.current_config();
                     let (paper_w_mm, _paper_h_mm) = config.paper_size.dimensions_mm(config.is_portrait);
                     let full_dpi_w = paper_w_mm / 25.4 * 300.0;
 
@@ -1166,10 +1407,12 @@ impl eframe::App for PhotoGridApp {
                                 if self.total_pages > 1 && self.view_mode == PreviewViewMode::AllPages {
                                     ui.horizontal(|ui| {
                                         ui.add_space(8.0);
-                                        ui.label(RichText::new(format!("Sheet #{} of {}", p_idx + 1, self.total_pages))
-                                            .size(12.5)
-                                            .strong()
-                                            .color(Color32::from_rgb(0, 190, 240)));
+                                        ui.label(
+                                            RichText::new(format!("Sheet #{} of {}", p_idx + 1, self.total_pages))
+                                                .size(12.5)
+                                                .strong()
+                                                .color(Color32::from_rgb(56, 189, 248)),
+                                        );
                                     });
                                     ui.add_space(2.0);
                                 }
@@ -1179,14 +1422,14 @@ impl eframe::App for PhotoGridApp {
                                 let img_resp = ui.add(
                                     egui::Image::new(texture)
                                         .fit_to_exact_size(egui::vec2(sheet_w, sheet_h))
-                                        .corner_radius(4),
+                                        .corner_radius(6),
                                 );
                                 let sheet_rect = img_resp.rect;
 
                                 let painter = ui.painter();
-                                let shadow_rect = sheet_rect.expand(3.0);
-                                painter.rect_filled(shadow_rect, 6.0, Color32::from_black_alpha(80));
-                                painter.rect_stroke(sheet_rect, 4.0, Stroke::new(1.0, Color32::from_rgb(200, 205, 215)), StrokeKind::Outside);
+                                let shadow_rect = sheet_rect.expand(4.0);
+                                painter.rect_filled(shadow_rect, 8.0, Color32::from_black_alpha(100));
+                                painter.rect_stroke(sheet_rect, 6.0, Stroke::new(1.0, Color32::from_rgb(180, 185, 200)), StrokeKind::Outside);
 
                                 let start_x = sheet_rect.min.x + outer_margin_x + (available_w - grid_w) / 2.0;
                                 let start_y = sheet_rect.min.y + outer_margin_y + (available_h - grid_h) / 2.0;
@@ -1214,29 +1457,29 @@ impl eframe::App for PhotoGridApp {
                                         }
 
                                         if is_dragged {
-                                            painter.rect_filled(cell_rect, 2.0, Color32::from_black_alpha(150));
-                                            painter.rect_stroke(cell_rect, 2.0, Stroke::new(2.0, Color32::from_rgb(100, 110, 130)), StrokeKind::Inside);
+                                            painter.rect_filled(cell_rect, 4.0, Color32::from_black_alpha(160));
+                                            painter.rect_stroke(cell_rect, 4.0, Stroke::new(2.0, Color32::from_rgb(100, 110, 130)), StrokeKind::Inside);
                                         } else if is_drop_target {
-                                            painter.rect_filled(cell_rect, 2.0, Color32::from_rgba_premultiplied(0, 200, 255, 60));
-                                            painter.rect_stroke(cell_rect, 2.0, Stroke::new(3.0, Color32::from_rgb(0, 220, 255)), StrokeKind::Inside);
+                                            painter.rect_filled(cell_rect, 4.0, Color32::from_rgba_premultiplied(37, 99, 235, 70));
+                                            painter.rect_stroke(cell_rect, 4.0, Stroke::new(3.0, Color32::from_rgb(56, 189, 248)), StrokeKind::Inside);
 
                                             let badge = format!("Drop to move #{} here", self.dragged_item_idx.unwrap_or(0) + 1);
                                             let badge_rect = Rect::from_min_size(cell_rect.min + Vec2::new(4.0, 4.0), Vec2::new(140.0, 20.0));
-                                            painter.rect_filled(badge_rect, 4.0, Color32::from_black_alpha(220));
-                                            painter.text(badge_rect.center(), Align2::CENTER_CENTER, badge, egui::FontId::proportional(10.0), Color32::from_rgb(0, 230, 255));
+                                            painter.rect_filled(badge_rect, 4.0, Color32::from_black_alpha(230));
+                                            painter.text(badge_rect.center(), Align2::CENTER_CENTER, badge, egui::FontId::proportional(10.0), Color32::from_rgb(56, 189, 248));
                                         }
                                     } else {
                                         if is_hovered {
                                             ctx.set_cursor_icon(CursorIcon::Grab);
-                                            painter.rect_filled(cell_rect, 2.0, Color32::from_rgba_premultiplied(0, 160, 255, 40));
-                                            painter.rect_stroke(cell_rect, 2.0, Stroke::new(2.5, Color32::from_rgb(0, 190, 255)), StrokeKind::Inside);
+                                            painter.rect_filled(cell_rect, 3.0, Color32::from_rgba_premultiplied(37, 99, 235, 45));
+                                            painter.rect_stroke(cell_rect, 3.0, Stroke::new(2.5, Color32::from_rgb(56, 189, 248)), StrokeKind::Inside);
 
                                             let badge_text = format!("#{}: Drag to move | Click to edit", item_idx + 1);
                                             let badge_rect = Rect::from_min_size(cell_rect.min + Vec2::new(4.0, 4.0), Vec2::new(165.0, 20.0));
-                                            painter.rect_filled(badge_rect, 4.0, Color32::from_black_alpha(210));
+                                            painter.rect_filled(badge_rect, 4.0, Color32::from_black_alpha(220));
                                             painter.text(badge_rect.center(), Align2::CENTER_CENTER, badge_text, egui::FontId::proportional(9.5), Color32::WHITE);
                                         } else if is_selected {
-                                            painter.rect_stroke(cell_rect, 2.0, Stroke::new(2.5, Color32::from_rgb(255, 180, 0)), StrokeKind::Inside);
+                                            painter.rect_stroke(cell_rect, 3.0, Stroke::new(2.5, Color32::from_rgb(245, 158, 11)), StrokeKind::Inside);
                                         }
 
                                         if is_hovered && is_mouse_down && self.dragged_item_idx.is_none() {
@@ -1283,7 +1526,7 @@ impl eframe::App for PhotoGridApp {
                             let ghost_rect = Rect::from_center_size(cur_pos + Vec2::new(25.0, 25.0), Vec2::new(125.0, 30.0));
                             let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("drag_ghost")));
                             painter.rect_filled(ghost_rect, 6.0, Color32::from_black_alpha(230));
-                            painter.rect_stroke(ghost_rect, 6.0, Stroke::new(1.5, Color32::from_rgb(0, 200, 255)), StrokeKind::Outside);
+                            painter.rect_stroke(ghost_rect, 6.0, Stroke::new(1.5, Color32::from_rgb(56, 189, 248)), StrokeKind::Outside);
                             
                             let label = format!("Moving Photo #{}", drag_idx + 1);
                             painter.text(ghost_rect.center(), Align2::CENTER_CENTER, label, egui::FontId::proportional(11.0), Color32::WHITE);
@@ -1321,7 +1564,7 @@ impl eframe::App for PhotoGridApp {
                         let item = &mut self.items[selected_idx];
                         let filename = item.path.file_name().unwrap_or_default().to_string_lossy();
 
-                        ui.label(RichText::new(filename).strong().color(Color32::from_rgb(220, 225, 240)));
+                        ui.label(RichText::new(filename).strong().color(Color32::from_rgb(240, 244, 255)));
                         ui.separator();
 
                         ui.horizontal(|ui| {
@@ -1370,7 +1613,7 @@ impl eframe::App for PhotoGridApp {
 
                         ui.separator();
                         ui.horizontal(|ui| {
-                            if ui.button(RichText::new("Remove Photo").color(Color32::from_rgb(240, 80, 80))).clicked() {
+                            if ui.button(RichText::new("Remove Photo").color(Color32::from_rgb(248, 113, 113))).clicked() {
                                 should_delete = true;
                             }
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1384,12 +1627,14 @@ impl eframe::App for PhotoGridApp {
                 if should_rotate {
                     self.items[selected_idx].image = self.items[selected_idx].image.rotate90();
                     self.items[selected_idx].preview_cache = self.items[selected_idx].preview_cache.rotate90();
+                    self.items[selected_idx].thumbnail_texture = None;
                     self.preview_dirty = true;
                 }
 
                 if should_flip {
                     self.items[selected_idx].image = self.items[selected_idx].image.fliph();
                     self.items[selected_idx].preview_cache = self.items[selected_idx].preview_cache.fliph();
+                    self.items[selected_idx].thumbnail_texture = None;
                     self.preview_dirty = true;
                 }
 
@@ -1419,8 +1664,8 @@ impl eframe::App for PhotoGridApp {
 pub fn run_gui() -> Result<(), eframe::Error> {
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1220.0, 840.0])
-            .with_min_inner_size([900.0, 600.0])
+            .with_inner_size([1260.0, 860.0])
+            .with_min_inner_size([960.0, 640.0])
             .with_title("Photo Grid Print - Sheet Generator & Direct Print"),
         ..Default::default()
     };

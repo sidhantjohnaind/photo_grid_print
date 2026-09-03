@@ -1,14 +1,14 @@
 # 📷 Photo Grid Print
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Language-Rust-orange.svg" alt="Rust">
-  <img src="https://img.shields.io/badge/GUI-egui%20%2F%20eframe-blue.svg" alt="egui">
+  <img src="https://img.shields.io/badge/Language-Rust%20%7C%20Kotlin-orange.svg" alt="Rust & Kotlin">
+  <img src="https://img.shields.io/badge/GUI-egui%20%2F%20Jetpack%20Compose-blue.svg" alt="egui & Jetpack Compose">
   <img src="https://img.shields.io/badge/Resolution-300%20DPI%20Print-brightgreen.svg" alt="300 DPI">
-  <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-informational.svg" alt="Platforms">
+  <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Android%20%7C%20Linux%20%7C%20macOS-informational.svg" alt="Platforms">
   <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="MIT License">
 </p>
 
-A blazing-fast, standalone desktop application and CLI built with **Rust** that arranges photos into multi-page print-ready grid sheets in **300 DPI PDF format** with **Multi-Sheet Live Preview**, **Interactive Photo Cell Editing**, **Passport / ID Presets**, **Color Filters & B&W**, **Page Margins & Gaps**, **Rotation & Reordering**, and **Direct Printing**.
+A blazing-fast, standalone desktop application and **native Android mobile app** that arranges photos into multi-page print-ready grid sheets in **300 DPI PDF format** with **Multi-Sheet Live Preview**, **Interactive Photo Cell Editing**, **Passport / ID Presets**, **Color Filters & B&W**, **Page Margins & Gaps**, **6 Color Themes**, and **Direct Printing**.
 
 ---
 
@@ -53,9 +53,10 @@ A blazing-fast, standalone desktop application and CLI built with **Rust** that 
 ## 🚀 Quick Start
 
 ### 1. Download & Run
-Download the latest `photo_grid_print.exe` from the [Releases](https://github.com/sidhantjohnaind/photo_grid_print/releases) page and double-click to launch!
+* **Desktop (Windows / Linux / macOS)**: Download the latest binary from [GitHub Releases](https://github.com/sidhantjohnaind/photo_grid_print/releases).
+* **Android (Phone / Tablet)**: Download **`PhotoGridPrint-Android.apk`** from [GitHub Releases](https://github.com/sidhantjohnaind/photo_grid_print/releases) and install directly on your Android device!
 
-### 2. Build from Source
+### 2. Build Desktop from Source
 
 ```bash
 # Clone repository
@@ -67,6 +68,14 @@ cargo build --release
 
 # Run
 ./target/release/photo_grid_print.exe
+```
+
+### 3. Build Android APK from Source
+
+```bash
+cd android
+./gradlew assembleRelease
+# Output APK: android/app/build/outputs/apk/release/app-release.apk
 ```
 
 ---

@@ -839,8 +839,8 @@ impl eframe::App for PhotoGridApp {
                 egui::Layout::top_down(egui::Align::Min),
                 |ui| {
                     let sidebar_avail = ui.available_size();
-                    let bottom_bar_height = 100.0;
-                    let scroll_height = (sidebar_avail.y - bottom_bar_height).max(200.0);
+                    let bottom_reserved = if self.status_message.is_some() { 110.0 } else { 68.0 };
+                    let scroll_height = (sidebar_avail.y - bottom_reserved).max(80.0);
 
                     // --- Tab Bar ---
                     Frame::default()
@@ -852,7 +852,7 @@ impl eframe::App for PhotoGridApp {
                             ui.horizontal(|ui| {
                                 let tab_w = (sidebar_width - 32.0) / 3.0;
 
-                                let photos_label = format!("📷 Photos ({})", self.items.len());
+                                let photos_label = format!("Photos ({})", self.items.len());
                                 if themed_tab_btn(ui, theme, self.sidebar_tab == SidebarTab::Photos, &photos_label, tab_w)
                                     .on_hover_text("Manage imported photos, copies, and order")
                                     .clicked()
@@ -860,14 +860,14 @@ impl eframe::App for PhotoGridApp {
                                     self.sidebar_tab = SidebarTab::Photos;
                                 }
 
-                                if themed_tab_btn(ui, theme, self.sidebar_tab == SidebarTab::Layout, "📐 Layout & Grid", tab_w)
+                                if themed_tab_btn(ui, theme, self.sidebar_tab == SidebarTab::Layout, "Layout & Grid", tab_w)
                                     .on_hover_text("Paper sizes, passport presets, grid rows & cols")
                                     .clicked()
                                 {
                                     self.sidebar_tab = SidebarTab::Layout;
                                 }
 
-                                if themed_tab_btn(ui, theme, self.sidebar_tab == SidebarTab::Settings, "🎨 Themes & Style", tab_w)
+                                if themed_tab_btn(ui, theme, self.sidebar_tab == SidebarTab::Settings, "Themes & Style", tab_w)
                                     .on_hover_text("Themes, color palettes, margins, trimmer marks")
                                     .clicked()
                                 {
@@ -1380,15 +1380,25 @@ impl eframe::App for PhotoGridApp {
                                         ui.horizontal(|ui| {
                                             let prev_out = self.output_path.clone();
                                             ui.text_edit_singleline(&mut self.output_path);
+
+                                            let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
                                             if ui.button("Browse...").clicked() {
+                                                let default_name = format!("Photo_Grid_Print_{}.pdf", timestamp);
                                                 if let Some(dest) = rfd::FileDialog::new()
-                                                    .set_file_name("Photo_Grid_Print.pdf")
+                                                    .set_file_name(&default_name)
                                                     .add_filter("PDF Document", &["pdf"])
                                                     .save_file()
                                                 {
                                                     self.output_path = dest.to_string_lossy().to_string();
                                                 }
                                             }
+
+                                            if ui.button("New Timestamp").on_hover_text("Refresh to current date and time").clicked() {
+                                                let p = PathBuf::from(&self.output_path);
+                                                let parent = p.parent().unwrap_or_else(|| std::path::Path::new("."));
+                                                self.output_path = parent.join(format!("Photo_Grid_Print_{}.pdf", timestamp)).to_string_lossy().to_string();
+                                            }
+
                                             if self.output_path != prev_out {
                                                 self.save_config();
                                             }
@@ -1407,7 +1417,7 @@ impl eframe::App for PhotoGridApp {
                     let btn_w = (sidebar_width - 24.0) / 2.0;
                     ui.horizontal(|ui| {
                         let print_btn = egui::Button::new(
-                            RichText::new("🖨 Print Now")
+                            RichText::new("Print Now")
                                 .size(14.5)
                                 .strong()
                                 .color(Color32::WHITE),
@@ -1422,7 +1432,7 @@ impl eframe::App for PhotoGridApp {
                         }
 
                         let pdf_btn = egui::Button::new(
-                            RichText::new("💾 Save & Open PDF")
+                            RichText::new("Save & Open PDF")
                                 .size(14.5)
                                 .strong()
                                 .color(Color32::WHITE),

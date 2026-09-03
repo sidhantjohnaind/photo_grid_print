@@ -36,8 +36,9 @@ pub struct AppConfig {
 
 impl Default for AppConfig {
     fn default() -> Self {
+        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
         let default_out = dirs_desktop()
-            .map(|d| d.join("Photo_Grid_Print.pdf").to_string_lossy().to_string());
+            .map(|d| d.join(format!("Photo_Grid_Print_{}.pdf", timestamp)).to_string_lossy().to_string());
 
         Self {
             paper_size: PaperSize::A4,
@@ -71,14 +72,36 @@ impl AppConfig {
 
     pub fn load() -> Self {
         let path = Self::config_path();
-        if path.exists() {
+        let mut cfg = if path.exists() {
             if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(cfg) = serde_json::from_str::<AppConfig>(&content) {
-                    return cfg;
+                if let Ok(c) = serde_json::from_str::<AppConfig>(&content) {
+                    c
+                } else {
+                    Self::default()
                 }
+            } else {
+                Self::default()
             }
-        }
-        Self::default()
+        } else {
+            Self::default()
+        };
+
+        // Always ensure a fresh timestamp date is present in the output filename
+        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+        let parent = cfg
+            .output_path
+            .as_ref()
+            .and_then(|p| PathBuf::from(p).parent().map(|p| p.to_path_buf()))
+            .or_else(dirs_desktop)
+            .unwrap_or_else(|| PathBuf::from("."));
+
+        cfg.output_path = Some(
+            parent
+                .join(format!("Photo_Grid_Print_{}.pdf", timestamp))
+                .to_string_lossy()
+                .to_string(),
+        );
+        cfg
     }
 
     pub fn save(&self) {

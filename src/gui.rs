@@ -530,14 +530,7 @@ impl UiTheme {
     }
 
     pub fn emoji(&self) -> &'static str {
-        match self {
-            UiTheme::CyberNeon => "⚡",
-            UiTheme::TokyoNight => "🔮",
-            UiTheme::ForestEmerald => "🌲",
-            UiTheme::SunsetAmber => "🌅",
-            UiTheme::DarkSlate => "🖤",
-            UiTheme::StudioLight => "☀️",
-        }
+        "●"
     }
 
     pub fn is_dark(&self) -> bool {
@@ -579,12 +572,12 @@ impl UiTheme {
 
     pub fn canvas_bg(&self) -> Color32 {
         match self {
-            UiTheme::CyberNeon => Color32::from_rgb(10, 14, 23),      // Deep studio navy
-            UiTheme::TokyoNight => Color32::from_rgb(17, 13, 27),     // Night synthwave
-            UiTheme::ForestEmerald => Color32::from_rgb(11, 20, 18),  // Deep pine studio
-            UiTheme::SunsetAmber => Color32::from_rgb(22, 16, 15),    // Warm studio charcoal
-            UiTheme::DarkSlate => Color32::from_rgb(14, 16, 22),      // Deep neutral slate
-            UiTheme::StudioLight => Color32::from_rgb(238, 242, 246), // Soft studio gray
+            UiTheme::CyberNeon => Color32::from_rgb(26, 32, 46),      // Balanced studio navy slate
+            UiTheme::TokyoNight => Color32::from_rgb(32, 26, 48),     // Balanced studio violet
+            UiTheme::ForestEmerald => Color32::from_rgb(24, 36, 32),  // Balanced studio pine
+            UiTheme::SunsetAmber => Color32::from_rgb(36, 28, 26),    // Warm studio charcoal
+            UiTheme::DarkSlate => Color32::from_rgb(28, 32, 42),      // Classic neutral studio slate
+            UiTheme::StudioLight => Color32::from_rgb(228, 234, 242), // Clean paper desk
         }
     }
 
@@ -1038,55 +1031,74 @@ impl eframe::App for PhotoGridApp {
                                             frame.show(ui, |ui| {
                                                 ui.set_width(content_w);
 
+                                                let usable_w = (content_w - 24.0).max(100.0);
+                                                let right_controls_w = 172.0_f32;
+                                                let left_info_w = (usable_w - right_controls_w).max(80.0);
+
                                                 ui.horizontal(|ui| {
-                                                    // Thumbnail
-                                                    if let Some(tex) = &item.thumbnail_texture {
-                                                        ui.image((tex.id(), egui::vec2(38.0, 38.0)));
-                                                    }
+                                                    // 1. Thumbnail + Info Column
+                                                    ui.allocate_ui_with_layout(
+                                                        egui::vec2(left_info_w, 42.0),
+                                                        egui::Layout::left_to_right(egui::Align::Center),
+                                                        |ui| {
+                                                            if let Some(tex) = &item.thumbnail_texture {
+                                                                ui.image((tex.id(), egui::vec2(38.0, 38.0)));
+                                                            }
 
-                                                    ui.vertical(|ui| {
-                                                        ui.horizontal(|ui| {
-                                                            let num_label = format!("#{}", idx + 1);
-                                                            ui.label(RichText::new(num_label).strong().color(theme.accent_color()));
+                                                            ui.vertical(|ui| {
+                                                                ui.horizontal(|ui| {
+                                                                    let num_label = format!("#{}", idx + 1);
+                                                                    ui.label(RichText::new(num_label).strong().color(theme.accent_color()));
 
-                                                            let name = item.path.file_name().unwrap_or_default().to_string_lossy();
-                                                            ui.add(egui::Label::new(RichText::new(name).size(12.0).strong().color(theme.text_primary())).truncate());
-                                                        });
+                                                                    let name = item.path.file_name().unwrap_or_default().to_string_lossy();
+                                                                    let text_limit_w = (left_info_w - 60.0).max(40.0);
+                                                                    ui.add_sized(
+                                                                        [text_limit_w, 16.0],
+                                                                        egui::Label::new(RichText::new(name).size(12.0).strong().color(theme.text_primary())).truncate(),
+                                                                    );
+                                                                });
 
-                                                        let dims = format!("{} × {} px", item.image.width(), item.image.height());
-                                                        ui.label(RichText::new(dims).size(10.5).color(theme.text_muted()));
-                                                    });
+                                                                let dims = format!("{} × {} px", item.image.width(), item.image.height());
+                                                                ui.label(RichText::new(dims).size(10.5).color(theme.text_muted()));
+                                                            });
+                                                        },
+                                                    );
 
-                                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                        if ui.small_button(RichText::new("X").color(Color32::from_rgb(248, 113, 113))).on_hover_text("Delete photo").clicked() {
-                                                            to_remove = Some(idx);
-                                                        }
+                                                    // 2. Action Controls Column (Fixed width, never overlaps text)
+                                                    ui.allocate_ui_with_layout(
+                                                        egui::vec2(right_controls_w, 42.0),
+                                                        egui::Layout::right_to_left(egui::Align::Center),
+                                                        |ui| {
+                                                            if ui.small_button(RichText::new("X").color(Color32::from_rgb(248, 113, 113))).on_hover_text("Delete photo").clicked() {
+                                                                to_remove = Some(idx);
+                                                            }
 
-                                                        if idx + 1 < items_len && ui.small_button("v").on_hover_text("Move Down").clicked() {
-                                                            to_swap = Some((idx, idx + 1));
-                                                        }
-                                                        if idx > 0 && ui.small_button("^").on_hover_text("Move Up").clicked() {
-                                                            to_swap = Some((idx, idx - 1));
-                                                        }
+                                                            if idx + 1 < items_len && ui.small_button("v").on_hover_text("Move Down").clicked() {
+                                                                to_swap = Some((idx, idx + 1));
+                                                            }
+                                                            if idx > 0 && ui.small_button("^").on_hover_text("Move Up").clicked() {
+                                                                to_swap = Some((idx, idx - 1));
+                                                            }
 
-                                                        if ui.small_button("Rot 90").on_hover_text("Rotate 90 degrees").clicked() {
-                                                            to_rotate = Some(idx);
-                                                        }
+                                                            if ui.small_button("Rot 90").on_hover_text("Rotate 90 degrees").clicked() {
+                                                                to_rotate = Some(idx);
+                                                            }
 
-                                                        // Copies stepper
-                                                        let prev_c = item.copies;
-                                                        if ui.small_button("+").clicked() && item.copies < 100 {
-                                                            item.copies += 1;
-                                                        }
-                                                        ui.add(egui::DragValue::new(&mut item.copies).range(1..=100));
-                                                        if ui.small_button("-").clicked() && item.copies > 1 {
-                                                            item.copies -= 1;
-                                                        }
+                                                            // Copies stepper
+                                                            let prev_c = item.copies;
+                                                            if ui.small_button("+").clicked() && item.copies < 100 {
+                                                                item.copies += 1;
+                                                            }
+                                                            ui.add(egui::DragValue::new(&mut item.copies).range(1..=100));
+                                                            if ui.small_button("-").clicked() && item.copies > 1 {
+                                                                item.copies -= 1;
+                                                            }
 
-                                                        if item.copies != prev_c {
-                                                            self.preview_dirty = true;
-                                                        }
-                                                    });
+                                                            if item.copies != prev_c {
+                                                                self.preview_dirty = true;
+                                                            }
+                                                        },
+                                                    );
                                                 });
                                             });
                                         }
@@ -1487,72 +1499,72 @@ impl eframe::App for PhotoGridApp {
                     let cell_w_in = cell_w_mm / 25.4;
                     let cell_h_in = cell_h_mm / 25.4;
 
-                    // Multi-page header bar
-                    ui.horizontal(|ui| {
-                        ui.add_space(8.0);
-                        ui.label(
-                            RichText::new("Live Sheet Preview")
-                                .size(14.0)
-                                .strong()
-                                .color(theme.text_primary()),
-                        );
-
-                        // Physical cell dimensions pill
-                        let dim_text = format!(
-                            "Cell: {:.1} × {:.1} mm ({:.2} × {:.2} in)",
-                            cell_w_mm, cell_h_mm, cell_w_in, cell_h_in
-                        );
-                        ui.label(
-                            RichText::new(dim_text)
-                                .size(11.5)
-                                .color(theme.accent_color()),
-                        );
-
-                        ui.label(
-                            RichText::new(format!("• {} photos total ({} / sheet)", total_photos, per_page))
-                                .size(11.5)
-                                .color(theme.text_muted()),
-                        );
-
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.add_space(8.0);
-
-                            // Paging controls in Single Page mode
-                            if self.view_mode == PreviewViewMode::SinglePage && self.total_pages > 1 {
-                                if ui.button("Next >").clicked() {
-                                    if self.preview_page_idx + 1 < self.total_pages {
-                                        self.preview_page_idx += 1;
-                                    }
-                                }
-
+                    // Multi-page header bar ribbon
+                    Frame::default()
+                        .fill(theme.card_bg())
+                        .stroke(Stroke::new(1.0, theme.card_border()))
+                        .corner_radius(CornerRadius::same(6))
+                        .inner_margin(Margin::symmetric(10, 6))
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
                                 ui.label(
-                                    RichText::new(format!("{}/{}", self.preview_page_idx + 1, self.total_pages))
+                                    RichText::new("Sheet Preview")
+                                        .size(13.5)
                                         .strong()
-                                        .color(theme.accent_color()),
+                                        .color(theme.text_primary()),
                                 );
 
-                                if ui.button("< Prev").clicked() {
-                                    if self.preview_page_idx > 0 {
-                                        self.preview_page_idx -= 1;
-                                    }
-                                }
+                                ui.separator();
+
+                                let dim_text = format!("{:.1} × {:.1} mm ({:.2} × {:.2} in)", cell_w_mm, cell_h_mm, cell_w_in, cell_h_in);
+                                ui.label(RichText::new("Cell:").size(11.5).color(theme.text_muted()));
+                                ui.label(RichText::new(dim_text).size(11.5).strong().color(theme.accent_color()));
 
                                 ui.separator();
-                            }
 
-                            // View Mode Toggle Buttons
-                            let is_all = self.view_mode == PreviewViewMode::AllPages;
-                            let is_single = self.view_mode == PreviewViewMode::SinglePage;
+                                ui.label(
+                                    RichText::new(format!("{} photos ({} / sheet)", total_photos, per_page))
+                                        .size(11.5)
+                                        .color(theme.text_muted()),
+                                );
 
-                            if themed_chip_btn(ui, theme, is_all, "Scroll All Sheets").clicked() {
-                                self.view_mode = PreviewViewMode::AllPages;
-                            }
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    // View Mode Toggle Buttons
+                                    let is_all = self.view_mode == PreviewViewMode::AllPages;
+                                    let is_single = self.view_mode == PreviewViewMode::SinglePage;
 
-                            if themed_chip_btn(ui, theme, is_single, "Single Page").clicked() {
-                                self.view_mode = PreviewViewMode::SinglePage;
-                            }
+                                    if themed_chip_btn(ui, theme, is_all, "All Sheets").clicked() {
+                                        self.view_mode = PreviewViewMode::AllPages;
+                                    }
+
+                                    if themed_chip_btn(ui, theme, is_single, "Single Page").clicked() {
+                                        self.view_mode = PreviewViewMode::SinglePage;
+                                    }
+
+                                    // Paging controls in Single Page mode
+                                    if self.view_mode == PreviewViewMode::SinglePage && self.total_pages > 1 {
+                                        ui.separator();
+                                        if ui.button("Next >").clicked() {
+                                            if self.preview_page_idx + 1 < self.total_pages {
+                                                self.preview_page_idx += 1;
+                                            }
+                                        }
+
+                                        ui.label(
+                                            RichText::new(format!("{}/{}", self.preview_page_idx + 1, self.total_pages))
+                                                .strong()
+                                                .color(theme.accent_color()),
+                                        );
+
+                                        if ui.button("< Prev").clicked() {
+                                            if self.preview_page_idx > 0 {
+                                                self.preview_page_idx -= 1;
+                                            }
+                                        }
+                                    }
+                                });
+                            });
                         });
-                    });
 
                     ui.add_space(4.0);
 
@@ -1721,18 +1733,27 @@ impl eframe::App for PhotoGridApp {
                                     continue;
                                 }
 
-                                ui.add_space(4.0);
+                                ui.add_space(8.0);
                                 if self.total_pages > 1 && self.view_mode == PreviewViewMode::AllPages {
+                                    let avail_w = ui.available_width();
+                                    let left_pad = ((avail_w - sheet_w) / 2.0).max(8.0);
                                     ui.horizontal(|ui| {
-                                        ui.add_space(8.0);
-                                        ui.label(
-                                            RichText::new(format!("Sheet #{} of {}", p_idx + 1, self.total_pages))
-                                                .size(12.5)
-                                                .strong()
-                                                .color(theme.accent_color()),
-                                        );
+                                        ui.add_space(left_pad);
+                                        Frame::default()
+                                            .fill(theme.card_bg())
+                                            .stroke(Stroke::new(1.0, theme.card_border()))
+                                            .corner_radius(CornerRadius::same(6))
+                                            .inner_margin(Margin::symmetric(10, 4))
+                                            .show(ui, |ui| {
+                                                ui.label(
+                                                    RichText::new(format!("Sheet {} of {}", p_idx + 1, self.total_pages))
+                                                        .size(12.0)
+                                                        .strong()
+                                                        .color(theme.accent_color()),
+                                                );
+                                            });
                                     });
-                                    ui.add_space(2.0);
+                                    ui.add_space(4.0);
                                 }
 
                                 let texture = &self.preview_textures[p_idx];

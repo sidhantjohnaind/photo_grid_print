@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -24,6 +25,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Share
@@ -167,38 +170,79 @@ fun PhotoGridAppScreen() {
 
                         // Multi-Page Navigation Controls
                         if (totalPages > 1) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                OutlinedButton(
                                     onClick = { if (currentPage > 0) currentPage-- },
                                     enabled = currentPage > 0,
-                                    modifier = Modifier.size(28.dp)
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        containerColor = Color(selectedTheme.cardHex),
+                                        contentColor = Color(selectedTheme.accentHex),
+                                        disabledContainerColor = Color(selectedTheme.cardHex).copy(alpha = 0.5f),
+                                        disabledContentColor = Color.DarkGray
+                                    ),
+                                    border = BorderStroke(1.dp, if (currentPage > 0) Color(selectedTheme.borderHex) else Color.DarkGray),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.height(28.dp)
                                 ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ChevronLeft,
+                                        contentDescription = "Previous Page",
+                                        modifier = Modifier.size(16.dp),
+                                        tint = if (currentPage > 0) Color(selectedTheme.accentHex) else Color.Gray
+                                    )
+                                    Spacer(modifier = Modifier.width(2.dp))
                                     Text(
-                                        text = "< Prev",
+                                        text = "Prev",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = if (currentPage > 0) Color(selectedTheme.accentHex) else Color.Gray
                                     )
                                 }
 
-                                Text(
-                                    text = "${currentPage + 1} / $totalPages",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    modifier = Modifier.padding(horizontal = 6.dp)
-                                )
-
-                                IconButton(
-                                    onClick = { if (currentPage < totalPages - 1) currentPage++ },
-                                    enabled = currentPage < totalPages - 1,
-                                    modifier = Modifier.size(28.dp)
+                                Surface(
+                                    color = Color(selectedTheme.cardHex),
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, Color(selectedTheme.borderHex))
                                 ) {
                                     Text(
-                                        text = "Next >",
+                                        text = "${currentPage + 1} / $totalPages",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+
+                                OutlinedButton(
+                                    onClick = { if (currentPage < totalPages - 1) currentPage++ },
+                                    enabled = currentPage < totalPages - 1,
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        containerColor = Color(selectedTheme.cardHex),
+                                        contentColor = Color(selectedTheme.accentHex),
+                                        disabledContainerColor = Color(selectedTheme.cardHex).copy(alpha = 0.5f),
+                                        disabledContentColor = Color.DarkGray
+                                    ),
+                                    border = BorderStroke(1.dp, if (currentPage < totalPages - 1) Color(selectedTheme.borderHex) else Color.DarkGray),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.height(28.dp)
+                                ) {
+                                    Text(
+                                        text = "Next",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = if (currentPage < totalPages - 1) Color(selectedTheme.accentHex) else Color.Gray
+                                    )
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.ChevronRight,
+                                        contentDescription = "Next Page",
+                                        modifier = Modifier.size(16.dp),
+                                        tint = if (currentPage < totalPages - 1) Color(selectedTheme.accentHex) else Color.Gray
                                     )
                                 }
                             }

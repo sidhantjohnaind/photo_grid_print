@@ -1683,19 +1683,19 @@ impl eframe::App for PhotoGridApp {
                                     // Paging controls in Single Page mode
                                     if self.view_mode == PreviewViewMode::SinglePage && self.total_pages > 1 {
                                         ui.separator();
-                                        if ui.button("Next >").clicked() {
+                                        if ui.button(RichText::new("Next >").strong()).clicked() {
                                             if self.preview_page_idx + 1 < self.total_pages {
                                                 self.preview_page_idx += 1;
                                             }
                                         }
 
                                         ui.label(
-                                            RichText::new(format!("{}/{}", self.preview_page_idx + 1, self.total_pages))
+                                            RichText::new(format!("Sheet {} of {}", self.preview_page_idx + 1, self.total_pages))
                                                 .strong()
                                                 .color(theme.accent_color()),
                                         );
 
-                                        if ui.button("< Prev").clicked() {
+                                        if ui.button(RichText::new("< Prev").strong()).clicked() {
                                             if self.preview_page_idx > 0 {
                                                 self.preview_page_idx -= 1;
                                             }

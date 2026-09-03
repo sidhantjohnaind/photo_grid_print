@@ -1,4 +1,4 @@
-use crate::config::AppConfig;
+use crate::config::{AppConfig, UiTheme};
 use crate::grid::{
     render_all_preview_pages_with_copies, render_images_with_copies_to_pdf_pages, ColorFilter, FitMode, GridConfig, PaperSize,
 };
@@ -60,6 +60,7 @@ pub struct PhotoGridApp {
     pub last_folder: Option<String>,
     pub status_message: Option<(String, bool)>,
     pub sidebar_tab: SidebarTab,
+    pub theme: UiTheme,
 
     // Multi-Page Live Preview State
     pub preview_textures: Vec<TextureHandle>,
@@ -105,6 +106,7 @@ impl Default for PhotoGridApp {
             last_folder: cfg.last_folder,
             status_message: None,
             sidebar_tab: SidebarTab::Photos,
+            theme: cfg.theme,
             preview_textures: Vec::new(),
             preview_page_idx: 0,
             total_pages: 0,
@@ -122,10 +124,10 @@ impl Default for PhotoGridApp {
 
 impl PhotoGridApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        // Apply ultra-clean modern slate dark theme
-        apply_modern_theme(&cc.egui_ctx);
+        let app = Self::default();
+        apply_modern_theme(&cc.egui_ctx, app.theme);
 
-        let mut app = Self::default();
+        let mut app = app;
 
         // 1. Try restoring the user's last used folder from config
         if let Some(last) = &app.last_folder {
@@ -180,6 +182,7 @@ impl PhotoGridApp {
             show_cut_marks: self.show_cut_marks,
             output_path: Some(self.output_path.clone()),
             last_folder: self.last_folder.clone(),
+            theme: self.theme,
         };
         cfg.save();
     }
@@ -489,35 +492,144 @@ pub fn send_to_printer(pdf_path: &Path) {
 }
 
 // -----------------------------------------------------------------------------
-// Visual Styling & Cards
+// Dynamic Themes & Color Engine
 // -----------------------------------------------------------------------------
 
-pub fn modern_card() -> Frame {
+impl UiTheme {
+    pub fn name(&self) -> &'static str {
+        match self {
+            UiTheme::CyberNeon => "Cyber Neon",
+            UiTheme::TokyoNight => "Tokyo Purple",
+            UiTheme::ForestEmerald => "Forest Emerald",
+            UiTheme::SunsetAmber => "Sunset Amber",
+            UiTheme::DarkSlate => "Dark Slate",
+            UiTheme::StudioLight => "Studio Light",
+        }
+    }
+
+    pub fn emoji(&self) -> &'static str {
+        match self {
+            UiTheme::CyberNeon => "⚡",
+            UiTheme::TokyoNight => "🔮",
+            UiTheme::ForestEmerald => "🌲",
+            UiTheme::SunsetAmber => "🌅",
+            UiTheme::DarkSlate => "🖤",
+            UiTheme::StudioLight => "☀️",
+        }
+    }
+
+    pub fn is_dark(&self) -> bool {
+        *self != UiTheme::StudioLight
+    }
+
+    pub fn accent_color(&self) -> Color32 {
+        match self {
+            UiTheme::CyberNeon => Color32::from_rgb(6, 182, 212),     // Electric Cyan
+            UiTheme::TokyoNight => Color32::from_rgb(168, 85, 247),   // Vibrant Purple
+            UiTheme::ForestEmerald => Color32::from_rgb(16, 185, 129),// Neon Emerald
+            UiTheme::SunsetAmber => Color32::from_rgb(249, 115, 22),  // Glowing Orange/Amber
+            UiTheme::DarkSlate => Color32::from_rgb(59, 130, 246),    // Azure Blue
+            UiTheme::StudioLight => Color32::from_rgb(37, 99, 235),   // Crisp Sapphire
+        }
+    }
+
+    pub fn secondary_accent(&self) -> Color32 {
+        match self {
+            UiTheme::CyberNeon => Color32::from_rgb(59, 130, 246),
+            UiTheme::TokyoNight => Color32::from_rgb(236, 72, 153),
+            UiTheme::ForestEmerald => Color32::from_rgb(52, 211, 153),
+            UiTheme::SunsetAmber => Color32::from_rgb(244, 63, 94),
+            UiTheme::DarkSlate => Color32::from_rgb(96, 165, 250),
+            UiTheme::StudioLight => Color32::from_rgb(14, 165, 233),
+        }
+    }
+
+    pub fn panel_bg(&self) -> Color32 {
+        match self {
+            UiTheme::CyberNeon => Color32::from_rgb(11, 15, 25),      // Deep navy obsidian
+            UiTheme::TokyoNight => Color32::from_rgb(19, 15, 30),     // Night violet
+            UiTheme::ForestEmerald => Color32::from_rgb(12, 24, 21),  // Dark pine
+            UiTheme::SunsetAmber => Color32::from_rgb(26, 18, 16),    // Dark burnt charcoal
+            UiTheme::DarkSlate => Color32::from_rgb(16, 18, 24),      // Classic slate
+            UiTheme::StudioLight => Color32::from_rgb(248, 250, 252), // Clean paper white
+        }
+    }
+
+    pub fn card_bg(&self) -> Color32 {
+        match self {
+            UiTheme::CyberNeon => Color32::from_rgb(17, 24, 39),
+            UiTheme::TokyoNight => Color32::from_rgb(29, 23, 46),
+            UiTheme::ForestEmerald => Color32::from_rgb(19, 36, 32),
+            UiTheme::SunsetAmber => Color32::from_rgb(38, 26, 24),
+            UiTheme::DarkSlate => Color32::from_rgb(22, 25, 33),
+            UiTheme::StudioLight => Color32::from_rgb(255, 255, 255),
+        }
+    }
+
+    pub fn card_border(&self) -> Color32 {
+        match self {
+            UiTheme::CyberNeon => Color32::from_rgb(30, 58, 86),
+            UiTheme::TokyoNight => Color32::from_rgb(60, 40, 95),
+            UiTheme::ForestEmerald => Color32::from_rgb(30, 68, 56),
+            UiTheme::SunsetAmber => Color32::from_rgb(72, 42, 36),
+            UiTheme::DarkSlate => Color32::from_rgb(38, 43, 56),
+            UiTheme::StudioLight => Color32::from_rgb(226, 232, 240),
+        }
+    }
+
+    pub fn text_primary(&self) -> Color32 {
+        if self.is_dark() {
+            Color32::from_rgb(243, 244, 246)
+        } else {
+            Color32::from_rgb(15, 23, 42)
+        }
+    }
+
+    pub fn text_muted(&self) -> Color32 {
+        if self.is_dark() {
+            Color32::from_rgb(148, 163, 184)
+        } else {
+            Color32::from_rgb(100, 116, 139)
+        }
+    }
+}
+
+pub fn modern_card(theme: UiTheme) -> Frame {
     Frame {
         inner_margin: Margin::same(12),
         corner_radius: CornerRadius::same(8),
-        fill: Color32::from_rgb(22, 25, 33), // Obsidian slate
-        stroke: Stroke::new(1.0, Color32::from_rgb(38, 43, 56)),
+        fill: theme.card_bg(),
+        stroke: Stroke::new(1.0, theme.card_border()),
         ..Default::default()
     }
 }
 
-pub fn modern_card_highlight() -> Frame {
+pub fn modern_card_highlight(theme: UiTheme) -> Frame {
+    let highlight_border = theme.accent_color();
     Frame {
         inner_margin: Margin::same(12),
         corner_radius: CornerRadius::same(8),
-        fill: Color32::from_rgb(26, 30, 42),
-        stroke: Stroke::new(1.0, Color32::from_rgb(52, 60, 80)),
+        fill: theme.card_bg(),
+        stroke: Stroke::new(1.5, highlight_border),
         ..Default::default()
     }
 }
 
-pub fn apply_modern_theme(ctx: &egui::Context) {
-    let mut visuals = egui::Visuals::dark();
-    visuals.panel_fill = Color32::from_rgb(16, 18, 24);
-    visuals.window_fill = Color32::from_rgb(22, 25, 34);
-    visuals.extreme_bg_color = Color32::from_rgb(13, 14, 18);
-    visuals.override_text_color = Some(Color32::from_rgb(238, 242, 250));
+pub fn apply_modern_theme(ctx: &egui::Context, theme: UiTheme) {
+    let mut visuals = if theme.is_dark() {
+        egui::Visuals::dark()
+    } else {
+        egui::Visuals::light()
+    };
+
+    visuals.panel_fill = theme.panel_bg();
+    visuals.window_fill = theme.card_bg();
+    visuals.extreme_bg_color = if theme.is_dark() {
+        Color32::from_rgb(9, 11, 16)
+    } else {
+        Color32::from_rgb(241, 245, 249)
+    };
+    visuals.override_text_color = Some(theme.text_primary());
 
     visuals.widgets.noninteractive.corner_radius = CornerRadius::same(6);
     visuals.widgets.inactive.corner_radius = CornerRadius::same(6);
@@ -525,40 +637,45 @@ pub fn apply_modern_theme(ctx: &egui::Context) {
     visuals.widgets.active.corner_radius = CornerRadius::same(6);
     visuals.widgets.open.corner_radius = CornerRadius::same(6);
 
-    visuals.widgets.inactive.bg_fill = Color32::from_rgb(28, 32, 43);
-    visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, Color32::from_rgb(46, 53, 68));
+    let inactive_bg = if theme.is_dark() {
+        Color32::from_rgb(26, 31, 44)
+    } else {
+        Color32::from_rgb(241, 245, 249)
+    };
+    visuals.widgets.inactive.bg_fill = inactive_bg;
+    visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, theme.card_border());
 
-    visuals.widgets.hovered.bg_fill = Color32::from_rgb(40, 46, 62);
-    visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgb(70, 80, 104));
+    visuals.widgets.hovered.bg_fill = theme.card_border();
+    visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, theme.accent_color());
 
-    visuals.widgets.active.bg_fill = Color32::from_rgb(37, 99, 235);
-    visuals.widgets.active.bg_stroke = Stroke::new(1.0, Color32::from_rgb(96, 165, 250));
+    visuals.widgets.active.bg_fill = theme.accent_color();
+    visuals.widgets.active.bg_stroke = Stroke::new(1.0, theme.secondary_accent());
 
-    visuals.selection.bg_fill = Color32::from_rgb(37, 99, 235);
-    visuals.selection.stroke = Stroke::new(1.0, Color32::from_rgb(96, 165, 250));
+    visuals.selection.bg_fill = theme.accent_color();
+    visuals.selection.stroke = Stroke::new(1.0, theme.secondary_accent());
 
     ctx.set_visuals(visuals);
 }
 
-fn segmented_tab_btn(ui: &mut egui::Ui, selected: bool, text: &str) -> egui::Response {
+fn themed_tab_btn(ui: &mut egui::Ui, theme: UiTheme, selected: bool, text: &str) -> egui::Response {
     let (bg, text_color, stroke) = if selected {
-        (Color32::from_rgb(37, 99, 235), Color32::WHITE, Stroke::new(1.0, Color32::from_rgb(96, 165, 250)))
+        (theme.accent_color(), Color32::WHITE, Stroke::new(1.0, theme.secondary_accent()))
     } else {
-        (Color32::from_rgb(24, 28, 38), Color32::from_rgb(160, 172, 195), Stroke::new(1.0, Color32::from_rgb(42, 48, 64)))
+        (theme.card_bg(), theme.text_muted(), Stroke::new(1.0, theme.card_border()))
     };
     let btn = egui::Button::new(RichText::new(text).size(12.5).strong().color(text_color))
         .fill(bg)
         .stroke(stroke)
         .corner_radius(CornerRadius::same(6))
-        .min_size(egui::vec2(0.0, 30.0));
+        .min_size(egui::vec2(0.0, 32.0));
     ui.add(btn)
 }
 
-fn chip_btn(ui: &mut egui::Ui, active: bool, text: &str) -> egui::Response {
+fn themed_chip_btn(ui: &mut egui::Ui, theme: UiTheme, active: bool, text: &str) -> egui::Response {
     let (bg, text_color, stroke) = if active {
-        (Color32::from_rgb(37, 99, 235), Color32::WHITE, Stroke::new(1.0, Color32::from_rgb(96, 165, 250)))
+        (theme.accent_color(), Color32::WHITE, Stroke::new(1.0, theme.secondary_accent()))
     } else {
-        (Color32::from_rgb(30, 34, 46), Color32::from_rgb(190, 200, 218), Stroke::new(1.0, Color32::from_rgb(48, 55, 72)))
+        (theme.card_bg(), theme.text_muted(), Stroke::new(1.0, theme.card_border()))
     };
     let btn = egui::Button::new(RichText::new(text).size(11.5).strong().color(text_color))
         .fill(bg)
@@ -574,6 +691,7 @@ fn chip_btn(ui: &mut egui::Ui, active: bool, text: &str) -> egui::Response {
 impl eframe::App for PhotoGridApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        let theme = self.theme;
 
         // Drag and drop file handler from outside OS
         ctx.input(|i| {
@@ -603,7 +721,7 @@ impl eframe::App for PhotoGridApp {
         }
 
         // ==========================================
-        // TOP APP BAR: Elegant studio header
+        // TOP APP BAR: Vibrant Colorful Header
         // ==========================================
         ui.horizontal(|ui| {
             ui.add_space(8.0);
@@ -611,14 +729,14 @@ impl eframe::App for PhotoGridApp {
                 RichText::new("PHOTO GRID PRINT")
                     .size(17.0)
                     .strong()
-                    .color(Color32::from_rgb(245, 248, 255)),
+                    .color(theme.accent_color()),
             );
 
-            let core_text = format!("⚡ {} CPU Threads", rayon::current_num_threads());
+            let core_text = format!("⚡ {} Threads", rayon::current_num_threads());
             ui.label(
                 RichText::new(core_text)
-                    .size(10.5)
-                    .color(Color32::from_rgb(56, 189, 248)),
+                    .size(11.0)
+                    .color(theme.secondary_accent()),
             );
 
             let cfg = self.current_config();
@@ -631,15 +749,45 @@ impl eframe::App for PhotoGridApp {
             ui.label(
                 RichText::new(format!("|  {}", summary_chip))
                     .size(11.5)
-                    .color(Color32::from_rgb(148, 163, 184)),
+                    .color(theme.text_muted()),
             );
 
+            // Dynamic Theme Switcher right in the top bar!
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(10.0);
-                if ui.button(RichText::new("⚙ Config").size(12.0)).clicked() {
+                if ui.button(RichText::new("⚙ Config").size(11.5)).clicked() {
                     let cfg_path = AppConfig::config_path();
                     let _ = open::that(cfg_path.parent().unwrap_or(&cfg_path));
                 }
+
+                ui.add_space(8.0);
+                for t in [
+                    UiTheme::StudioLight,
+                    UiTheme::DarkSlate,
+                    UiTheme::SunsetAmber,
+                    UiTheme::ForestEmerald,
+                    UiTheme::TokyoNight,
+                    UiTheme::CyberNeon,
+                ] {
+                    let is_active = self.theme == t;
+                    let (bg, text_c, stroke) = if is_active {
+                        (t.accent_color(), Color32::WHITE, Stroke::new(1.5, t.secondary_accent()))
+                    } else {
+                        (theme.card_bg(), t.accent_color(), Stroke::new(1.0, theme.card_border()))
+                    };
+
+                    let btn = egui::Button::new(RichText::new(format!("{} {}", t.emoji(), t.name())).size(11.0).strong().color(text_c))
+                        .fill(bg)
+                        .stroke(stroke)
+                        .corner_radius(CornerRadius::same(5));
+
+                    if ui.add(btn).on_hover_text(format!("Switch theme to {}", t.name())).clicked() {
+                        self.theme = t;
+                        apply_modern_theme(&ctx, self.theme);
+                        self.save_config();
+                    }
+                }
+                ui.label(RichText::new("🎨 Theme:").size(11.5).color(theme.text_muted()));
             });
         });
 
@@ -667,22 +815,22 @@ impl eframe::App for PhotoGridApp {
                         let _tab_w = (sidebar_width - 16.0) / 3.0;
 
                         let photos_label = format!("📷 Photos ({})", self.items.len());
-                        if segmented_tab_btn(ui, self.sidebar_tab == SidebarTab::Photos, &photos_label)
+                        if themed_tab_btn(ui, theme, self.sidebar_tab == SidebarTab::Photos, &photos_label)
                             .on_hover_text("Manage imported photos, copies, and order")
                             .clicked()
                         {
                             self.sidebar_tab = SidebarTab::Photos;
                         }
 
-                        if segmented_tab_btn(ui, self.sidebar_tab == SidebarTab::Layout, "📐 Layout & Grid")
+                        if themed_tab_btn(ui, theme, self.sidebar_tab == SidebarTab::Layout, "📐 Layout & Grid")
                             .on_hover_text("Paper sizes, passport presets, grid rows & cols")
                             .clicked()
                         {
                             self.sidebar_tab = SidebarTab::Layout;
                         }
 
-                        if segmented_tab_btn(ui, self.sidebar_tab == SidebarTab::Settings, "🎨 Style & Tone")
-                            .on_hover_text("Margins, photo gaps, trimmer marks, color filters")
+                        if themed_tab_btn(ui, theme, self.sidebar_tab == SidebarTab::Settings, "🎨 Themes & Style")
+                            .on_hover_text("Themes, color palettes, margins, trimmer marks")
                             .clicked()
                         {
                             self.sidebar_tab = SidebarTab::Settings;
@@ -706,16 +854,16 @@ impl eframe::App for PhotoGridApp {
                                 // -------------------------------------------------------------
                                 SidebarTab::Photos => {
                                     // 1. Quick Add / Import Card
-                                    modern_card().show(ui, |ui| {
+                                    modern_card(theme).show(ui, |ui| {
                                         ui.set_width(content_w);
                                         ui.horizontal(|ui| {
-                                            ui.label(RichText::new("Import Photos").strong().color(Color32::from_rgb(240, 244, 255)));
-                                            ui.label(RichText::new("(or drag & drop files)").size(11.0).color(Color32::from_rgb(140, 150, 170)));
+                                            ui.label(RichText::new("Import Photos").strong().color(theme.text_primary()));
+                                            ui.label(RichText::new("(or drag & drop files)").size(11.0).color(theme.text_muted()));
                                         });
 
                                         ui.add_space(4.0);
                                         ui.horizontal_wrapped(|ui| {
-                                            if ui.add(egui::Button::new(RichText::new("+ Select Files...").strong()).fill(Color32::from_rgb(37, 99, 235))).clicked() {
+                                            if ui.add(egui::Button::new(RichText::new("+ Select Files...").strong().color(Color32::WHITE)).fill(theme.accent_color())).clicked() {
                                                 if let Some(files) = rfd::FileDialog::new()
                                                     .add_filter("Images", &["jpg", "jpeg", "png", "webp", "bmp"])
                                                     .pick_files()
@@ -755,20 +903,20 @@ impl eframe::App for PhotoGridApp {
                                     });
 
                                     // 2. Copies Settings Card
-                                    modern_card().show(ui, |ui| {
+                                    modern_card(theme).show(ui, |ui| {
                                         ui.set_width(content_w);
                                         ui.horizontal(|ui| {
-                                            ui.label(RichText::new("Copies Mode:").strong().color(Color32::from_rgb(240, 244, 255)));
+                                            ui.label(RichText::new("Copies Mode:").strong().color(theme.text_primary()));
 
                                             let is_all = self.copies_mode == CopiesMode::SameForAll;
                                             let is_ind = self.copies_mode == CopiesMode::Individual;
 
-                                            if chip_btn(ui, is_all, "Same for All").clicked() {
+                                            if themed_chip_btn(ui, theme, is_all, "Same for All").clicked() {
                                                 self.copies_mode = CopiesMode::SameForAll;
                                                 self.save_config();
                                                 self.preview_dirty = true;
                                             }
-                                            if chip_btn(ui, is_ind, "Individual per Photo").clicked() {
+                                            if themed_chip_btn(ui, theme, is_ind, "Individual per Photo").clicked() {
                                                 self.copies_mode = CopiesMode::Individual;
                                                 self.save_config();
                                                 self.preview_dirty = true;
@@ -791,7 +939,7 @@ impl eframe::App for PhotoGridApp {
 
                                                 ui.add_space(4.0);
                                                 for c in [1, 2, 3, 4, 6, 8, 16] {
-                                                    if chip_btn(ui, self.global_copies == c, &format!("{}x", c)).clicked() {
+                                                    if themed_chip_btn(ui, theme, self.global_copies == c, &format!("{}x", c)).clicked() {
                                                         self.global_copies = c;
                                                     }
                                                 }
@@ -821,12 +969,12 @@ impl eframe::App for PhotoGridApp {
 
                                     // 3. Photo List Cards
                                     if self.items.is_empty() {
-                                        modern_card().show(ui, |ui| {
+                                        modern_card(theme).show(ui, |ui| {
                                             ui.set_width(content_w);
                                             ui.vertical_centered(|ui| {
                                                 ui.add_space(30.0);
-                                                ui.label(RichText::new("No photos loaded yet").size(14.0).color(Color32::from_rgb(148, 163, 184)));
-                                                ui.label(RichText::new("Click '+ Select Files...' or drag & drop images here").size(11.5).color(Color32::GRAY));
+                                                ui.label(RichText::new("No photos loaded yet").size(14.0).color(theme.text_muted()));
+                                                ui.label(RichText::new("Click '+ Select Files...' or drag & drop images here").size(11.5).color(theme.text_muted()));
                                                 ui.add_space(30.0);
                                             });
                                         });
@@ -847,7 +995,7 @@ impl eframe::App for PhotoGridApp {
                                                 item.thumbnail_texture = Some(ctx.load_texture(format!("thumb_{}", idx), img, TextureOptions::LINEAR));
                                             }
 
-                                            let frame = if is_selected { modern_card_highlight() } else { modern_card() };
+                                            let frame = if is_selected { modern_card_highlight(theme) } else { modern_card(theme) };
                                             frame.show(ui, |ui| {
                                                 ui.set_width(content_w);
 
@@ -860,14 +1008,14 @@ impl eframe::App for PhotoGridApp {
                                                     ui.vertical(|ui| {
                                                         ui.horizontal(|ui| {
                                                             let num_label = format!("#{}", idx + 1);
-                                                            ui.label(RichText::new(num_label).strong().color(Color32::from_rgb(56, 189, 248)));
+                                                            ui.label(RichText::new(num_label).strong().color(theme.accent_color()));
 
                                                             let name = item.path.file_name().unwrap_or_default().to_string_lossy();
-                                                            ui.add(egui::Label::new(RichText::new(name).size(12.0).strong()).truncate());
+                                                            ui.add(egui::Label::new(RichText::new(name).size(12.0).strong().color(theme.text_primary())).truncate());
                                                         });
 
                                                         let dims = format!("{} × {} px", item.image.width(), item.image.height());
-                                                        ui.label(RichText::new(dims).size(10.5).color(Color32::from_rgb(148, 163, 184)));
+                                                        ui.label(RichText::new(dims).size(10.5).color(theme.text_muted()));
                                                     });
 
                                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -932,9 +1080,9 @@ impl eframe::App for PhotoGridApp {
                                 // -------------------------------------------------------------
                                 SidebarTab::Layout => {
                                     // Paper Size & Orientation
-                                    modern_card().show(ui, |ui| {
+                                    modern_card(theme).show(ui, |ui| {
                                         ui.set_width(content_w);
-                                        ui.label(RichText::new("Paper Size & Orientation").strong().color(Color32::from_rgb(240, 244, 255)));
+                                        ui.label(RichText::new("Paper Size & Orientation").strong().color(theme.text_primary()));
                                         ui.add_space(4.0);
 
                                         ui.horizontal(|ui| {
@@ -961,10 +1109,10 @@ impl eframe::App for PhotoGridApp {
                                         ui.horizontal(|ui| {
                                             ui.label("Orientation:");
                                             let prev_port = self.is_portrait;
-                                            if chip_btn(ui, !self.is_portrait, "Landscape").clicked() {
+                                            if themed_chip_btn(ui, theme, !self.is_portrait, "Landscape").clicked() {
                                                 self.is_portrait = false;
                                             }
-                                            if chip_btn(ui, self.is_portrait, "Portrait").clicked() {
+                                            if themed_chip_btn(ui, theme, self.is_portrait, "Portrait").clicked() {
                                                 self.is_portrait = true;
                                             }
                                             if self.is_portrait != prev_port {
@@ -975,21 +1123,21 @@ impl eframe::App for PhotoGridApp {
                                     });
 
                                     // Standard Grid Presets
-                                    modern_card().show(ui, |ui| {
+                                    modern_card(theme).show(ui, |ui| {
                                         ui.set_width(content_w);
-                                        ui.label(RichText::new("Grid Presets").strong().color(Color32::from_rgb(240, 244, 255)));
+                                        ui.label(RichText::new("Grid Presets").strong().color(theme.text_primary()));
                                         ui.add_space(4.0);
 
                                         let prev_cols = self.cols;
                                         let prev_rows = self.rows;
 
                                         ui.horizontal_wrapped(|ui| {
-                                            if chip_btn(ui, self.cols == 4 && self.rows == 4, "16 (4x4)").clicked() { self.cols = 4; self.rows = 4; }
-                                            if chip_btn(ui, self.cols == 3 && self.rows == 3, "9 (3x3)").clicked() { self.cols = 3; self.rows = 3; }
-                                            if chip_btn(ui, self.cols == 4 && self.rows == 2, "8 (4x2)").clicked() { self.cols = 4; self.rows = 2; }
-                                            if chip_btn(ui, self.cols == 3 && self.rows == 2, "6 (3x2)").clicked() { self.cols = 3; self.rows = 2; }
-                                            if chip_btn(ui, self.cols == 2 && self.rows == 3, "6 (2x3)").clicked() { self.cols = 2; self.rows = 3; }
-                                            if chip_btn(ui, self.cols == 2 && self.rows == 2, "4 (2x2)").clicked() { self.cols = 2; self.rows = 2; }
+                                            if themed_chip_btn(ui, theme, self.cols == 4 && self.rows == 4, "16 (4x4)").clicked() { self.cols = 4; self.rows = 4; }
+                                            if themed_chip_btn(ui, theme, self.cols == 3 && self.rows == 3, "9 (3x3)").clicked() { self.cols = 3; self.rows = 3; }
+                                            if themed_chip_btn(ui, theme, self.cols == 4 && self.rows == 2, "8 (4x2)").clicked() { self.cols = 4; self.rows = 2; }
+                                            if themed_chip_btn(ui, theme, self.cols == 3 && self.rows == 2, "6 (3x2)").clicked() { self.cols = 3; self.rows = 2; }
+                                            if themed_chip_btn(ui, theme, self.cols == 2 && self.rows == 3, "6 (2x3)").clicked() { self.cols = 2; self.rows = 3; }
+                                            if themed_chip_btn(ui, theme, self.cols == 2 && self.rows == 2, "4 (2x2)").clicked() { self.cols = 2; self.rows = 2; }
                                         });
 
                                         if self.cols != prev_cols || self.rows != prev_rows {
@@ -998,20 +1146,20 @@ impl eframe::App for PhotoGridApp {
                                         }
 
                                         ui.add_space(6.0);
-                                        ui.label(RichText::new("ID / Passport Photo Sizes:").size(11.5).strong().color(Color32::from_rgb(148, 163, 184)));
+                                        ui.label(RichText::new("ID / Passport Photo Sizes:").size(11.5).strong().color(theme.text_muted()));
                                         ui.add_space(2.0);
 
                                         let prev_cols = self.cols;
                                         let prev_rows = self.rows;
 
                                         ui.horizontal_wrapped(|ui| {
-                                            if chip_btn(ui, self.cols == 3 && self.rows == 2, "US Passport 2x2\" (6)").clicked() {
+                                            if themed_chip_btn(ui, theme, self.cols == 3 && self.rows == 2, "US Passport 2x2\" (6)").clicked() {
                                                 self.cols = 3; self.rows = 2; self.fit_mode = FitMode::Fill;
                                             }
-                                            if chip_btn(ui, self.cols == 4 && self.rows == 2, "Passport 35x45mm (8)").clicked() {
+                                            if themed_chip_btn(ui, theme, self.cols == 4 && self.rows == 2, "Passport 35x45mm (8)").clicked() {
                                                 self.cols = 4; self.rows = 2; self.fit_mode = FitMode::Fill;
                                             }
-                                            if chip_btn(ui, self.cols == 4 && self.rows == 3, "Stamp 30x40mm (12)").clicked() {
+                                            if themed_chip_btn(ui, theme, self.cols == 4 && self.rows == 3, "Stamp 30x40mm (12)").clicked() {
                                                 self.cols = 4; self.rows = 3; self.fit_mode = FitMode::Fill;
                                             }
                                         });
@@ -1023,9 +1171,9 @@ impl eframe::App for PhotoGridApp {
                                     });
 
                                     // Custom Columns & Rows
-                                    modern_card().show(ui, |ui| {
+                                    modern_card(theme).show(ui, |ui| {
                                         ui.set_width(content_w);
-                                        ui.label(RichText::new("Custom Grid & Fit").strong().color(Color32::from_rgb(240, 244, 255)));
+                                        ui.label(RichText::new("Custom Grid & Fit").strong().color(theme.text_primary()));
                                         ui.add_space(4.0);
 
                                         let prev_cols = self.cols;
@@ -1042,10 +1190,10 @@ impl eframe::App for PhotoGridApp {
                                         ui.add_space(4.0);
                                         ui.horizontal(|ui| {
                                             ui.label("Image Fit:");
-                                            if chip_btn(ui, self.fit_mode == FitMode::Fill, "Fill (Crop to Cell)").clicked() {
+                                            if themed_chip_btn(ui, theme, self.fit_mode == FitMode::Fill, "Fill (Crop to Cell)").clicked() {
                                                 self.fit_mode = FitMode::Fill;
                                             }
-                                            if chip_btn(ui, self.fit_mode == FitMode::Contain, "Fit (Preserve Full)").clicked() {
+                                            if themed_chip_btn(ui, theme, self.fit_mode == FitMode::Contain, "Fit (Preserve Full)").clicked() {
                                                 self.fit_mode = FitMode::Contain;
                                             }
                                         });
@@ -1058,21 +1206,61 @@ impl eframe::App for PhotoGridApp {
                                 }
 
                                 // -------------------------------------------------------------
-                                // TAB 3: STYLE & SETTINGS
+                                // TAB 3: THEMES & STYLE
                                 // -------------------------------------------------------------
                                 SidebarTab::Settings => {
-                                    // Spacing & Margins
-                                    modern_card().show(ui, |ui| {
+                                    // Visual Theme Gallery Card
+                                    modern_card(theme).show(ui, |ui| {
                                         ui.set_width(content_w);
-                                        ui.label(RichText::new("Spacing & Bleed").strong().color(Color32::from_rgb(240, 244, 255)));
+                                        ui.horizontal(|ui| {
+                                            ui.label(RichText::new("Color Themes").strong().color(theme.accent_color()));
+                                            ui.label(RichText::new("(Instant preview)").size(11.0).color(theme.text_muted()));
+                                        });
+                                        ui.add_space(4.0);
+
+                                        ui.horizontal_wrapped(|ui| {
+                                            for t in [
+                                                UiTheme::CyberNeon,
+                                                UiTheme::TokyoNight,
+                                                UiTheme::ForestEmerald,
+                                                UiTheme::SunsetAmber,
+                                                UiTheme::DarkSlate,
+                                                UiTheme::StudioLight,
+                                            ] {
+                                                let is_active = self.theme == t;
+                                                let (bg, text_c, stroke) = if is_active {
+                                                    (t.accent_color(), Color32::WHITE, Stroke::new(1.5, t.secondary_accent()))
+                                                } else {
+                                                    (theme.card_bg(), t.accent_color(), Stroke::new(1.0, theme.card_border()))
+                                                };
+
+                                                let btn = egui::Button::new(RichText::new(format!("{} {}", t.emoji(), t.name())).size(12.0).strong().color(text_c))
+                                                    .fill(bg)
+                                                    .stroke(stroke)
+                                                    .corner_radius(CornerRadius::same(6))
+                                                    .min_size(egui::vec2(130.0, 32.0));
+
+                                                if ui.add(btn).clicked() {
+                                                    self.theme = t;
+                                                    apply_modern_theme(&ctx, self.theme);
+                                                    self.save_config();
+                                                }
+                                            }
+                                        });
+                                    });
+
+                                    // Spacing & Margins
+                                    modern_card(theme).show(ui, |ui| {
+                                        ui.set_width(content_w);
+                                        ui.label(RichText::new("Spacing & Bleed").strong().color(theme.text_primary()));
                                         ui.add_space(4.0);
 
                                         ui.horizontal(|ui| {
                                             let prev_b = self.is_borderless;
-                                            if chip_btn(ui, !self.is_borderless, "Spaced Margins").clicked() {
+                                            if themed_chip_btn(ui, theme, !self.is_borderless, "Spaced Margins").clicked() {
                                                 self.is_borderless = false;
                                             }
-                                            if chip_btn(ui, self.is_borderless, "100% Full-Bleed").clicked() {
+                                            if themed_chip_btn(ui, theme, self.is_borderless, "100% Full-Bleed").clicked() {
                                                 self.is_borderless = true;
                                             }
                                             if self.is_borderless != prev_b {
@@ -1120,20 +1308,20 @@ impl eframe::App for PhotoGridApp {
                                     });
 
                                     // Color Tone Filters
-                                    modern_card().show(ui, |ui| {
+                                    modern_card(theme).show(ui, |ui| {
                                         ui.set_width(content_w);
-                                        ui.label(RichText::new("Color Filter").strong().color(Color32::from_rgb(240, 244, 255)));
+                                        ui.label(RichText::new("Color Filter").strong().color(theme.text_primary()));
                                         ui.add_space(4.0);
 
                                         let prev_filter = self.color_filter;
                                         ui.horizontal(|ui| {
-                                            if chip_btn(ui, self.color_filter == ColorFilter::Original, "Color").clicked() {
+                                            if themed_chip_btn(ui, theme, self.color_filter == ColorFilter::Original, "Color").clicked() {
                                                 self.color_filter = ColorFilter::Original;
                                             }
-                                            if chip_btn(ui, self.color_filter == ColorFilter::Grayscale, "Grayscale (B&W)").clicked() {
+                                            if themed_chip_btn(ui, theme, self.color_filter == ColorFilter::Grayscale, "Grayscale (B&W)").clicked() {
                                                 self.color_filter = ColorFilter::Grayscale;
                                             }
-                                            if chip_btn(ui, self.color_filter == ColorFilter::HighContrast, "High Contrast").clicked() {
+                                            if themed_chip_btn(ui, theme, self.color_filter == ColorFilter::HighContrast, "High Contrast").clicked() {
                                                 self.color_filter = ColorFilter::HighContrast;
                                             }
                                         });
@@ -1145,9 +1333,9 @@ impl eframe::App for PhotoGridApp {
                                     });
 
                                     // Output Save Path
-                                    modern_card().show(ui, |ui| {
+                                    modern_card(theme).show(ui, |ui| {
                                         ui.set_width(content_w);
-                                        ui.label(RichText::new("Output Destination").strong().color(Color32::from_rgb(240, 244, 255)));
+                                        ui.label(RichText::new("Output Destination").strong().color(theme.text_primary()));
                                         ui.add_space(4.0);
 
                                         ui.horizontal(|ui| {
@@ -1185,8 +1373,8 @@ impl eframe::App for PhotoGridApp {
                                 .strong()
                                 .color(Color32::WHITE),
                         )
-                        .fill(Color32::from_rgb(37, 99, 235))
-                        .stroke(Stroke::new(1.0, Color32::from_rgb(96, 165, 250)))
+                        .fill(theme.accent_color())
+                        .stroke(Stroke::new(1.0, theme.secondary_accent()))
                         .corner_radius(CornerRadius::same(7))
                         .min_size(egui::vec2(btn_w, 38.0));
 
@@ -1198,10 +1386,10 @@ impl eframe::App for PhotoGridApp {
                             RichText::new("Save & Open PDF")
                                 .size(14.5)
                                 .strong()
-                                .color(Color32::WHITE),
+                                .color(theme.text_primary()),
                         )
-                        .fill(Color32::from_rgb(40, 46, 60))
-                        .stroke(Stroke::new(1.0, Color32::from_rgb(60, 70, 92)))
+                        .fill(theme.card_bg())
+                        .stroke(Stroke::new(1.0, theme.card_border()))
                         .corner_radius(CornerRadius::same(7))
                         .min_size(egui::vec2(btn_w, 38.0));
 
@@ -1254,7 +1442,7 @@ impl eframe::App for PhotoGridApp {
                             RichText::new("Live Sheet Preview")
                                 .size(14.0)
                                 .strong()
-                                .color(Color32::from_rgb(240, 244, 255)),
+                                .color(theme.text_primary()),
                         );
 
                         // Physical cell dimensions pill
@@ -1265,13 +1453,13 @@ impl eframe::App for PhotoGridApp {
                         ui.label(
                             RichText::new(dim_text)
                                 .size(11.5)
-                                .color(Color32::from_rgb(56, 189, 248)),
+                                .color(theme.accent_color()),
                         );
 
                         ui.label(
                             RichText::new(format!("• {} photos total ({} / sheet)", total_photos, per_page))
                                 .size(11.5)
-                                .color(Color32::from_rgb(148, 163, 184)),
+                                .color(theme.text_muted()),
                         );
 
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1288,7 +1476,7 @@ impl eframe::App for PhotoGridApp {
                                 ui.label(
                                     RichText::new(format!("{}/{}", self.preview_page_idx + 1, self.total_pages))
                                         .strong()
-                                        .color(Color32::from_rgb(56, 189, 248)),
+                                        .color(theme.accent_color()),
                                 );
 
                                 if ui.button("< Prev").clicked() {
@@ -1304,11 +1492,11 @@ impl eframe::App for PhotoGridApp {
                             let is_all = self.view_mode == PreviewViewMode::AllPages;
                             let is_single = self.view_mode == PreviewViewMode::SinglePage;
 
-                            if chip_btn(ui, is_all, "Scroll All Sheets").clicked() {
+                            if themed_chip_btn(ui, theme, is_all, "Scroll All Sheets").clicked() {
                                 self.view_mode = PreviewViewMode::AllPages;
                             }
 
-                            if chip_btn(ui, is_single, "Single Page").clicked() {
+                            if themed_chip_btn(ui, theme, is_single, "Single Page").clicked() {
                                 self.view_mode = PreviewViewMode::SinglePage;
                             }
                         });
@@ -1323,13 +1511,13 @@ impl eframe::App for PhotoGridApp {
                                 RichText::new("No Photos Loaded")
                                     .size(19.0)
                                     .strong()
-                                    .color(Color32::from_rgb(148, 163, 184)),
+                                    .color(theme.text_muted()),
                             );
                             ui.add_space(6.0);
                             ui.label(
                                 RichText::new("Drag & drop image files anywhere or click '+ Select Files...' to preview sheets live")
                                     .size(13.0)
-                                    .color(Color32::from_rgb(100, 116, 139)),
+                                    .color(theme.text_muted()),
                             );
                         });
                         return;
@@ -1411,7 +1599,7 @@ impl eframe::App for PhotoGridApp {
                                             RichText::new(format!("Sheet #{} of {}", p_idx + 1, self.total_pages))
                                                 .size(12.5)
                                                 .strong()
-                                                .color(Color32::from_rgb(56, 189, 248)),
+                                                .color(theme.accent_color()),
                                         );
                                     });
                                     ui.add_space(2.0);
@@ -1428,8 +1616,9 @@ impl eframe::App for PhotoGridApp {
 
                                 let painter = ui.painter();
                                 let shadow_rect = sheet_rect.expand(4.0);
-                                painter.rect_filled(shadow_rect, 8.0, Color32::from_black_alpha(100));
-                                painter.rect_stroke(sheet_rect, 6.0, Stroke::new(1.0, Color32::from_rgb(180, 185, 200)), StrokeKind::Outside);
+                                let shadow_alpha = if theme.is_dark() { 110 } else { 40 };
+                                painter.rect_filled(shadow_rect, 8.0, Color32::from_black_alpha(shadow_alpha));
+                                painter.rect_stroke(sheet_rect, 6.0, Stroke::new(1.0, theme.card_border()), StrokeKind::Outside);
 
                                 let start_x = sheet_rect.min.x + outer_margin_x + (available_w - grid_w) / 2.0;
                                 let start_y = sheet_rect.min.y + outer_margin_y + (available_h - grid_h) / 2.0;
@@ -1460,26 +1649,26 @@ impl eframe::App for PhotoGridApp {
                                             painter.rect_filled(cell_rect, 4.0, Color32::from_black_alpha(160));
                                             painter.rect_stroke(cell_rect, 4.0, Stroke::new(2.0, Color32::from_rgb(100, 110, 130)), StrokeKind::Inside);
                                         } else if is_drop_target {
-                                            painter.rect_filled(cell_rect, 4.0, Color32::from_rgba_premultiplied(37, 99, 235, 70));
-                                            painter.rect_stroke(cell_rect, 4.0, Stroke::new(3.0, Color32::from_rgb(56, 189, 248)), StrokeKind::Inside);
+                                            painter.rect_filled(cell_rect, 4.0, Color32::from_rgba_premultiplied(theme.accent_color().r(), theme.accent_color().g(), theme.accent_color().b(), 70));
+                                            painter.rect_stroke(cell_rect, 4.0, Stroke::new(3.0, theme.accent_color()), StrokeKind::Inside);
 
                                             let badge = format!("Drop to move #{} here", self.dragged_item_idx.unwrap_or(0) + 1);
                                             let badge_rect = Rect::from_min_size(cell_rect.min + Vec2::new(4.0, 4.0), Vec2::new(140.0, 20.0));
                                             painter.rect_filled(badge_rect, 4.0, Color32::from_black_alpha(230));
-                                            painter.text(badge_rect.center(), Align2::CENTER_CENTER, badge, egui::FontId::proportional(10.0), Color32::from_rgb(56, 189, 248));
+                                            painter.text(badge_rect.center(), Align2::CENTER_CENTER, badge, egui::FontId::proportional(10.0), theme.accent_color());
                                         }
                                     } else {
                                         if is_hovered {
                                             ctx.set_cursor_icon(CursorIcon::Grab);
-                                            painter.rect_filled(cell_rect, 3.0, Color32::from_rgba_premultiplied(37, 99, 235, 45));
-                                            painter.rect_stroke(cell_rect, 3.0, Stroke::new(2.5, Color32::from_rgb(56, 189, 248)), StrokeKind::Inside);
+                                            painter.rect_filled(cell_rect, 3.0, Color32::from_rgba_premultiplied(theme.accent_color().r(), theme.accent_color().g(), theme.accent_color().b(), 45));
+                                            painter.rect_stroke(cell_rect, 3.0, Stroke::new(2.5, theme.accent_color()), StrokeKind::Inside);
 
                                             let badge_text = format!("#{}: Drag to move | Click to edit", item_idx + 1);
                                             let badge_rect = Rect::from_min_size(cell_rect.min + Vec2::new(4.0, 4.0), Vec2::new(165.0, 20.0));
                                             painter.rect_filled(badge_rect, 4.0, Color32::from_black_alpha(220));
                                             painter.text(badge_rect.center(), Align2::CENTER_CENTER, badge_text, egui::FontId::proportional(9.5), Color32::WHITE);
                                         } else if is_selected {
-                                            painter.rect_stroke(cell_rect, 3.0, Stroke::new(2.5, Color32::from_rgb(245, 158, 11)), StrokeKind::Inside);
+                                            painter.rect_stroke(cell_rect, 3.0, Stroke::new(2.5, theme.secondary_accent()), StrokeKind::Inside);
                                         }
 
                                         if is_hovered && is_mouse_down && self.dragged_item_idx.is_none() {
@@ -1526,7 +1715,7 @@ impl eframe::App for PhotoGridApp {
                             let ghost_rect = Rect::from_center_size(cur_pos + Vec2::new(25.0, 25.0), Vec2::new(125.0, 30.0));
                             let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::new("drag_ghost")));
                             painter.rect_filled(ghost_rect, 6.0, Color32::from_black_alpha(230));
-                            painter.rect_stroke(ghost_rect, 6.0, Stroke::new(1.5, Color32::from_rgb(56, 189, 248)), StrokeKind::Outside);
+                            painter.rect_stroke(ghost_rect, 6.0, Stroke::new(1.5, theme.accent_color()), StrokeKind::Outside);
                             
                             let label = format!("Moving Photo #{}", drag_idx + 1);
                             painter.text(ghost_rect.center(), Align2::CENTER_CENTER, label, egui::FontId::proportional(11.0), Color32::WHITE);
@@ -1564,7 +1753,7 @@ impl eframe::App for PhotoGridApp {
                         let item = &mut self.items[selected_idx];
                         let filename = item.path.file_name().unwrap_or_default().to_string_lossy();
 
-                        ui.label(RichText::new(filename).strong().color(Color32::from_rgb(240, 244, 255)));
+                        ui.label(RichText::new(filename).strong().color(theme.text_primary()));
                         ui.separator();
 
                         ui.horizontal(|ui| {

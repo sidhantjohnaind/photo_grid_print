@@ -3,6 +3,17 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+pub enum UiTheme {
+    #[default]
+    CyberNeon,      // Neon cyan + deep midnight
+    TokyoNight,     // Synthwave purple + hot pink
+    ForestEmerald,  // Radiant emerald + dark pine
+    SunsetAmber,    // Warm sunset amber + coral red
+    DarkSlate,      // Classic obsidian studio slate
+    StudioLight,    // Clean designer bright mode
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub paper_size: PaperSize,
@@ -19,6 +30,8 @@ pub struct AppConfig {
     pub show_cut_marks: bool,
     pub output_path: Option<String>,
     pub last_folder: Option<String>,
+    #[serde(default)]
+    pub theme: UiTheme,
 }
 
 impl Default for AppConfig {
@@ -41,6 +54,7 @@ impl Default for AppConfig {
             show_cut_marks: false,
             output_path: default_out,
             last_folder: None,
+            theme: UiTheme::CyberNeon,
         }
     }
 }

@@ -577,6 +577,18 @@ impl UiTheme {
         }
     }
 
+    pub fn canvas_bg(&self) -> Color32 {
+        match self {
+            UiTheme::CyberNeon => Color32::from_rgb(10, 14, 23),      // Deep studio navy
+            UiTheme::TokyoNight => Color32::from_rgb(17, 13, 27),     // Night synthwave
+            UiTheme::ForestEmerald => Color32::from_rgb(11, 20, 18),  // Deep pine studio
+            UiTheme::SunsetAmber => Color32::from_rgb(22, 16, 15),    // Warm studio charcoal
+            UiTheme::DarkSlate => Color32::from_rgb(14, 16, 22),      // Deep neutral slate
+            UiTheme::StudioLight => Color32::from_rgb(238, 242, 246), // Soft studio gray
+        }
+    }
+
+
     pub fn card_bg(&self) -> Color32 {
         match self {
             UiTheme::CyberNeon => Color32::from_rgb(17, 24, 39),
@@ -646,11 +658,7 @@ pub fn apply_modern_theme(ctx: &egui::Context, theme: UiTheme) {
 
     visuals.panel_fill = theme.panel_bg();
     visuals.window_fill = theme.card_bg();
-    visuals.extreme_bg_color = if theme.is_dark() {
-        Color32::from_rgb(9, 11, 16)
-    } else {
-        Color32::from_rgb(241, 245, 249)
-    };
+    visuals.extreme_bg_color = theme.canvas_bg();
     visuals.override_text_color = Some(theme.text_primary());
 
     visuals.widgets.noninteractive.corner_radius = CornerRadius::same(6);
@@ -679,17 +687,17 @@ pub fn apply_modern_theme(ctx: &egui::Context, theme: UiTheme) {
     ctx.set_visuals(visuals);
 }
 
-fn themed_tab_btn(ui: &mut egui::Ui, theme: UiTheme, selected: bool, text: &str) -> egui::Response {
+fn themed_tab_btn(ui: &mut egui::Ui, theme: UiTheme, selected: bool, text: &str, min_w: f32) -> egui::Response {
     let (bg, text_color, stroke) = if selected {
         (theme.accent_color(), Color32::WHITE, Stroke::new(1.0, theme.secondary_accent()))
     } else {
-        (theme.card_bg(), theme.text_muted(), Stroke::new(1.0, theme.card_border()))
+        (theme.panel_bg(), theme.text_muted(), Stroke::new(1.0, Color32::TRANSPARENT))
     };
     let btn = egui::Button::new(RichText::new(text).size(12.5).strong().color(text_color))
         .fill(bg)
         .stroke(stroke)
         .corner_radius(CornerRadius::same(6))
-        .min_size(egui::vec2(0.0, 32.0));
+        .min_size(egui::vec2(min_w, 32.0));
     ui.add(btn)
 }
 
@@ -774,7 +782,7 @@ impl eframe::App for PhotoGridApp {
                     .color(theme.text_muted()),
             );
 
-            // Dynamic Theme Switcher right in the top bar!
+            // Dynamic Theme Switcher - Clean & Sleek
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(10.0);
                 if ui.button(RichText::new("⚙ Config").size(11.5)).clicked() {
@@ -783,33 +791,35 @@ impl eframe::App for PhotoGridApp {
                 }
 
                 ui.add_space(8.0);
-                for t in [
-                    UiTheme::StudioLight,
-                    UiTheme::DarkSlate,
-                    UiTheme::SunsetAmber,
-                    UiTheme::ForestEmerald,
-                    UiTheme::TokyoNight,
-                    UiTheme::CyberNeon,
-                ] {
-                    let is_active = self.theme == t;
-                    let (bg, text_c, stroke) = if is_active {
-                        (t.accent_color(), Color32::WHITE, Stroke::new(1.5, t.secondary_accent()))
-                    } else {
-                        (theme.card_bg(), t.accent_color(), Stroke::new(1.0, theme.card_border()))
-                    };
-
-                    let btn = egui::Button::new(RichText::new(format!("{} {}", t.emoji(), t.name())).size(11.0).strong().color(text_c))
-                        .fill(bg)
-                        .stroke(stroke)
-                        .corner_radius(CornerRadius::same(5));
-
-                    if ui.add(btn).on_hover_text(format!("Switch theme to {}", t.name())).clicked() {
-                        self.theme = t;
-                        apply_modern_theme(&ctx, self.theme);
-                        self.save_config();
-                    }
-                }
-                ui.label(RichText::new("🎨 Theme:").size(11.5).color(theme.text_muted()));
+                egui::ComboBox::from_id_salt("top_theme_select")
+                    .selected_text(
+                        RichText::new(format!("{} {}", self.theme.emoji(), self.theme.name()))
+                            .size(12.0)
+                            .strong()
+                            .color(self.theme.accent_color()),
+                    )
+                    .show_ui(ui, |ui| {
+                        for t in [
+                            UiTheme::CyberNeon,
+                            UiTheme::TokyoNight,
+                            UiTheme::ForestEmerald,
+                            UiTheme::SunsetAmber,
+                            UiTheme::DarkSlate,
+                            UiTheme::StudioLight,
+                        ] {
+                            let is_active = self.theme == t;
+                            let text = RichText::new(format!("{} {}", t.emoji(), t.name()))
+                                .size(12.0)
+                                .strong()
+                                .color(if is_active { t.accent_color() } else { theme.text_primary() });
+                            if ui.selectable_label(is_active, text).clicked() {
+                                self.theme = t;
+                                apply_modern_theme(&ctx, self.theme);
+                                self.save_config();
+                            }
+                        }
+                    });
+                ui.label(RichText::new("🎨 Theme:").size(12.0).color(theme.text_muted()));
             });
         });
 
@@ -833,31 +843,38 @@ impl eframe::App for PhotoGridApp {
                     let scroll_height = (sidebar_avail.y - bottom_bar_height).max(200.0);
 
                     // --- Tab Bar ---
-                    ui.horizontal(|ui| {
-                        let _tab_w = (sidebar_width - 16.0) / 3.0;
+                    Frame::default()
+                        .fill(theme.canvas_bg())
+                        .stroke(Stroke::new(1.0, theme.card_border()))
+                        .corner_radius(CornerRadius::same(8))
+                        .inner_margin(Margin::same(3))
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                let tab_w = (sidebar_width - 32.0) / 3.0;
 
-                        let photos_label = format!("📷 Photos ({})", self.items.len());
-                        if themed_tab_btn(ui, theme, self.sidebar_tab == SidebarTab::Photos, &photos_label)
-                            .on_hover_text("Manage imported photos, copies, and order")
-                            .clicked()
-                        {
-                            self.sidebar_tab = SidebarTab::Photos;
-                        }
+                                let photos_label = format!("📷 Photos ({})", self.items.len());
+                                if themed_tab_btn(ui, theme, self.sidebar_tab == SidebarTab::Photos, &photos_label, tab_w)
+                                    .on_hover_text("Manage imported photos, copies, and order")
+                                    .clicked()
+                                {
+                                    self.sidebar_tab = SidebarTab::Photos;
+                                }
 
-                        if themed_tab_btn(ui, theme, self.sidebar_tab == SidebarTab::Layout, "📐 Layout & Grid")
-                            .on_hover_text("Paper sizes, passport presets, grid rows & cols")
-                            .clicked()
-                        {
-                            self.sidebar_tab = SidebarTab::Layout;
-                        }
+                                if themed_tab_btn(ui, theme, self.sidebar_tab == SidebarTab::Layout, "📐 Layout & Grid", tab_w)
+                                    .on_hover_text("Paper sizes, passport presets, grid rows & cols")
+                                    .clicked()
+                                {
+                                    self.sidebar_tab = SidebarTab::Layout;
+                                }
 
-                        if themed_tab_btn(ui, theme, self.sidebar_tab == SidebarTab::Settings, "🎨 Themes & Style")
-                            .on_hover_text("Themes, color palettes, margins, trimmer marks")
-                            .clicked()
-                        {
-                            self.sidebar_tab = SidebarTab::Settings;
-                        }
-                    });
+                                if themed_tab_btn(ui, theme, self.sidebar_tab == SidebarTab::Settings, "🎨 Themes & Style", tab_w)
+                                    .on_hover_text("Themes, color palettes, margins, trimmer marks")
+                                    .clicked()
+                                {
+                                    self.sidebar_tab = SidebarTab::Settings;
+                                }
+                            });
+                        });
 
                     ui.add_space(6.0);
 
@@ -1390,30 +1407,30 @@ impl eframe::App for PhotoGridApp {
                     let btn_w = (sidebar_width - 24.0) / 2.0;
                     ui.horizontal(|ui| {
                         let print_btn = egui::Button::new(
-                            RichText::new("Print Now")
+                            RichText::new("🖨 Print Now")
                                 .size(14.5)
                                 .strong()
                                 .color(Color32::WHITE),
                         )
                         .fill(theme.accent_color())
-                        .stroke(Stroke::new(1.0, theme.secondary_accent()))
-                        .corner_radius(CornerRadius::same(7))
-                        .min_size(egui::vec2(btn_w, 38.0));
+                        .stroke(Stroke::new(1.5, theme.secondary_accent()))
+                        .corner_radius(CornerRadius::same(8))
+                        .min_size(egui::vec2(btn_w, 42.0));
 
                         if ui.add(print_btn).clicked() {
                             self.generate_and_handle_pdf(true);
                         }
 
                         let pdf_btn = egui::Button::new(
-                            RichText::new("Save & Open PDF")
+                            RichText::new("💾 Save & Open PDF")
                                 .size(14.5)
                                 .strong()
-                                .color(theme.text_primary()),
+                                .color(Color32::WHITE),
                         )
-                        .fill(theme.card_bg())
-                        .stroke(Stroke::new(1.0, theme.card_border()))
-                        .corner_radius(CornerRadius::same(7))
-                        .min_size(egui::vec2(btn_w, 38.0));
+                        .fill(Color32::from_rgb(45, 54, 74))
+                        .stroke(Stroke::new(1.5, Color32::from_rgb(80, 96, 130)))
+                        .corner_radius(CornerRadius::same(8))
+                        .min_size(egui::vec2(btn_w, 42.0));
 
                         if ui.add(pdf_btn).clicked() {
                             self.generate_and_handle_pdf(false);
@@ -1446,10 +1463,13 @@ impl eframe::App for PhotoGridApp {
             // =========================================================================
             // RIGHT PANEL: Expanded Multi-Page Interactive Live Sheet Preview
             // =========================================================================
-            ui.allocate_ui_with_layout(
-                ui.available_size(),
-                egui::Layout::top_down(egui::Align::Center),
-                |ui| {
+            Frame::default()
+                .fill(theme.canvas_bg())
+                .show(ui, |ui| {
+                    ui.allocate_ui_with_layout(
+                        ui.available_size(),
+                        egui::Layout::top_down(egui::Align::Center),
+                        |ui| {
                     let per_page = self.cols * self.rows;
                     let total_photos: usize = self.prepare_preview_items().iter().map(|(_, c)| *c).sum();
                     let config = self.current_config();
@@ -1527,20 +1547,98 @@ impl eframe::App for PhotoGridApp {
                     ui.add_space(4.0);
 
                     if self.preview_textures.is_empty() {
-                        ui.vertical_centered(|ui| {
-                            ui.add_space(160.0);
-                            ui.label(
-                                RichText::new("No Photos Loaded")
-                                    .size(19.0)
-                                    .strong()
-                                    .color(theme.text_muted()),
-                            );
-                            ui.add_space(6.0);
-                            ui.label(
-                                RichText::new("Drag & drop image files anywhere or click '+ Select Files...' to preview sheets live")
-                                    .size(13.0)
-                                    .color(theme.text_muted()),
-                            );
+                        let (paper_w_mm, paper_h_mm) = config.paper_size.dimensions_mm(config.is_portrait);
+                        let paper_aspect = (paper_w_mm / paper_h_mm) as f32;
+
+                        let avail_space = ui.available_size();
+                        let max_sheet_w = (avail_space.x - 32.0).clamp(240.0, 780.0);
+                        let max_sheet_h = (avail_space.y - 48.0).clamp(200.0, 850.0);
+
+                        let (sheet_w, sheet_h) = if max_sheet_w / max_sheet_h > paper_aspect {
+                            (max_sheet_h * paper_aspect, max_sheet_h)
+                        } else {
+                            (max_sheet_w, max_sheet_w / paper_aspect)
+                        };
+
+                        ui.add_space(20.0);
+                        let (rect, _response) = ui.allocate_exact_size(egui::vec2(sheet_w, sheet_h), egui::Sense::hover());
+                        let painter = ui.painter_at(rect);
+
+                        // Soft realistic drop shadows
+                        let shadow_alpha = if theme.is_dark() { 90 } else { 35 };
+                        painter.rect_filled(rect.expand(6.0), 8.0, Color32::from_black_alpha(shadow_alpha));
+
+                        // Crisp paper surface
+                        painter.rect_filled(rect, 6.0, Color32::WHITE);
+                        painter.rect_stroke(rect, 6.0, Stroke::new(1.0, Color32::from_gray(215)), StrokeKind::Outside);
+
+                        // Draw live grid cells on the blank sheet
+                        let cols = config.cols.max(1) as f32;
+                        let rows = config.rows.max(1) as f32;
+                        let full_dpi_w = paper_w_mm / 25.4 * 300.0;
+                        let scale = sheet_w as f64 / full_dpi_w;
+                        let margin_x = if self.is_borderless { 0.0 } else { (config.margin_x as f64 * scale) as f32 };
+                        let margin_y = if self.is_borderless { 0.0 } else { (config.margin_y as f64 * scale) as f32 };
+                        let gap = if self.is_borderless { 0.0 } else { (config.gap as f64 * scale).max(0.0) as f32 };
+
+                        let grid_avail_w = sheet_w - 2.0 * margin_x;
+                        let grid_avail_h = sheet_h - 2.0 * margin_y;
+                        let cell_w = (grid_avail_w - (cols - 1.0) * gap) / cols;
+                        let cell_h = (grid_avail_h - (rows - 1.0) * gap) / rows;
+
+                        let cell_bg = Color32::from_rgb(248, 250, 252);
+                        let cell_stroke = Stroke::new(1.0, Color32::from_gray(225));
+
+                        for r in 0..config.rows {
+                            for c in 0..config.cols {
+                                let cx = rect.min.x + margin_x + c as f32 * (cell_w + gap);
+                                let cy = rect.min.y + margin_y + r as f32 * (cell_h + gap);
+                                let cell_rect = Rect::from_min_size(Pos2::new(cx, cy), Vec2::new(cell_w, cell_h));
+
+                                painter.rect_filled(cell_rect, 3.0, cell_bg);
+                                painter.rect_stroke(cell_rect, 3.0, cell_stroke, StrokeKind::Inside);
+
+                                let slot_num = r * config.cols + c + 1;
+                                painter.text(
+                                    cell_rect.center(),
+                                    Align2::CENTER_CENTER,
+                                    format!("#{}", slot_num),
+                                    egui::FontId::proportional(13.0),
+                                    Color32::from_gray(175),
+                                );
+                            }
+                        }
+
+                        // Center hero call-to-action floating card
+                        let card_w = (sheet_w * 0.62).clamp(260.0, 360.0);
+                        let card_h = 125.0;
+                        let cta_rect = Rect::from_center_size(rect.center(), Vec2::new(card_w, card_h));
+
+                        painter.rect_filled(cta_rect.expand(4.0), 12.0, Color32::from_black_alpha(100));
+                        painter.rect_filled(cta_rect, 10.0, theme.card_bg());
+                        painter.rect_stroke(cta_rect, 10.0, Stroke::new(1.5, theme.accent_color()), StrokeKind::Outside);
+
+                        let mut cta_ui = ui.new_child(egui::UiBuilder::new().max_rect(cta_rect));
+                        cta_ui.vertical_centered(|ui| {
+                            ui.add_space(12.0);
+                            ui.label(RichText::new("📄 Ready to Print").size(15.0).strong().color(theme.text_primary()));
+                            ui.label(RichText::new(format!("{} • {}x{} Grid ({} photos/sheet)", config.paper_size.name(), config.cols, config.rows, config.cols * config.rows)).size(11.0).color(theme.text_muted()));
+                            ui.add_space(8.0);
+
+                            let btn = egui::Button::new(RichText::new("+ Select Photos to Start").size(13.0).strong().color(Color32::WHITE))
+                                .fill(theme.accent_color())
+                                .stroke(Stroke::new(1.0, theme.secondary_accent()))
+                                .corner_radius(CornerRadius::same(6))
+                                .min_size(Vec2::new(190.0, 32.0));
+
+                            if ui.add(btn).clicked() {
+                                if let Some(files) = rfd::FileDialog::new()
+                                    .add_filter("Images", &["png", "jpg", "jpeg", "webp", "bmp"])
+                                    .pick_files()
+                                {
+                                    self.add_paths(&files);
+                                }
+                            }
                         });
                         return;
                     }
@@ -1754,6 +1852,7 @@ impl eframe::App for PhotoGridApp {
                 },
             );
         });
+    });
 
         // =========================================================================
         // FLOATING POPUP FOR CLICKED INDIVIDUAL PHOTO ON PREVIEW

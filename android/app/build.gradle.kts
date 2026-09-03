@@ -11,12 +11,21 @@ android {
         applicationId = "com.antigravity.photogridprint"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.8"
+        versionCode = 2
+        versionName = "1.1.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
+        }
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file("release.jks")
+            storePassword = "photogridprint123"
+            keyAlias = "photogridprint"
+            keyPassword = "photogridprint123"
         }
     }
 
@@ -27,7 +36,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug") // Allows instant installation without needing manual key setup
+            signingConfig = signingConfigs.getByName("release")
         }
     }
     compileOptions {

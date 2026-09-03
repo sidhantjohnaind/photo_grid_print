@@ -83,8 +83,9 @@ pub struct PhotoGridApp {
 impl Default for PhotoGridApp {
     fn default() -> Self {
         let cfg = AppConfig::load();
+        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
         let default_out = cfg.output_path.clone().unwrap_or_else(|| {
-            dirs_desktop().unwrap_or_else(|| PathBuf::from(".")).join("Photo_Grid_Print.pdf").to_string_lossy().to_string()
+            dirs_desktop().unwrap_or_else(|| PathBuf::from(".")).join(format!("Photo_Grid_Print_{}.pdf", timestamp)).to_string_lossy().to_string()
         });
 
         Self {
@@ -356,6 +357,7 @@ impl PhotoGridApp {
         self.save_config();
 
         let render_items = self.prepare_full_render_items();
+        let total_photos: usize = render_items.iter().map(|(_, c)| *c).sum();
         let config = self.current_config();
 
         match render_images_with_copies_to_pdf_pages(&render_items, &config) {
@@ -365,7 +367,28 @@ impl PhotoGridApp {
                 let page_h_pt = paper_h_mm / 25.4 * 72.0;
 
                 let pdf_bytes = pdf::create_pdf(&pdf_pages, page_w_pt, page_h_pt);
-                let out = PathBuf::from(&self.output_path);
+
+                // Add timestamp date at end so multiple PDF files exist without overwriting
+                let raw_out = PathBuf::from(&self.output_path);
+                let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+                let out = if raw_out.exists() || raw_out.file_name().and_then(|f| f.to_str()) == Some("Photo_Grid_Print.pdf") {
+                    let parent = raw_out.parent().unwrap_or_else(|| Path::new("."));
+                    let stem = raw_out.file_stem().and_then(|s| s.to_str()).unwrap_or("Photo_Grid_Print");
+                    let base_stem = if let Some(idx) = stem.rfind('_') {
+                        if stem[idx + 1..].chars().all(|c| c.is_ascii_digit()) && stem.len() - idx > 6 {
+                            &stem[..idx]
+                        } else {
+                            stem
+                        }
+                    } else {
+                        stem
+                    };
+                    let new_path = parent.join(format!("{}_{}.pdf", base_stem, timestamp));
+                    self.output_path = new_path.to_string_lossy().to_string();
+                    new_path
+                } else {
+                    raw_out
+                };
 
                 if let Some(parent) = out.parent() {
                     let _ = fs::create_dir_all(parent);
@@ -373,7 +396,6 @@ impl PhotoGridApp {
 
                 match fs::write(&out, &pdf_bytes) {
                     Ok(_) => {
-                        let total_photos: usize = render_items.iter().map(|(_, c)| *c).sum();
                         if direct_print {
                             self.status_message = Some((
                                 format!(

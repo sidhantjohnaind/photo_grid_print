@@ -195,7 +195,8 @@ fn main() -> Result<()> {
         Some(p) => p.clone(),
         None => {
             let desktop = dirs_desktop().unwrap_or_else(|| PathBuf::from("."));
-            desktop.join("Photo_Grid_Print.pdf")
+            let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+            desktop.join(format!("Photo_Grid_Print_{}.pdf", timestamp))
         }
     };
 

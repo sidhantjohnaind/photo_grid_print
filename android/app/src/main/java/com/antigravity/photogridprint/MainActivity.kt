@@ -22,6 +22,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Share
@@ -62,6 +64,7 @@ fun PhotoGridAppScreen() {
 
     var selectedTheme by remember { mutableStateOf(UiTheme.CyberNeon) }
     var selectedTab by remember { mutableStateOf(0) } // 0: Photos, 1: Layout, 2: Style
+    var currentPage by remember { mutableStateOf(0) }
 
     var items by remember { mutableStateOf(listOf<PhotoItem>()) }
     var config by remember { mutableStateOf(GridConfig()) }
@@ -129,7 +132,15 @@ fun PhotoGridAppScreen() {
                     )
                 )
 
-                // Upper Section: Live Sheet Preview Canvas
+                // Multi-page Calculation
+                val totalCopies = items.sumOf { it.copies }
+                val perPage = (config.cols * config.rows).coerceAtLeast(1)
+                val totalPages = maxOf(1, (totalCopies + perPage - 1) / perPage)
+                if (currentPage >= totalPages) {
+                    currentPage = totalPages - 1
+                }
+
+                // Upper Section: Live Sheet Preview Canvas with Page Selector & Dimensions
                 val (cellW, cellH) = config.calculateCellDimensionsMm()
                 val cellWIn = cellW / 25.4f
                 val cellHIn = cellH / 25.4f
@@ -153,19 +164,84 @@ fun PhotoGridAppScreen() {
                             fontWeight = FontWeight.Bold,
                             color = Color(selectedTheme.accentHex)
                         )
-                        val totalCopies = items.sumOf { it.copies }
-                        Text(
-                            text = "${items.size} photos ($totalCopies total)",
-                            fontSize = 11.sp,
-                            color = Color.Gray
-                        )
+
+                        // Multi-Page Navigation Controls
+                        if (totalPages > 1) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = { if (currentPage > 0) currentPage-- },
+                                    enabled = currentPage > 0,
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Text(
+                                        text = "< Prev",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (currentPage > 0) Color(selectedTheme.accentHex) else Color.Gray
+                                    )
+                                }
+
+                                Text(
+                                    text = "${currentPage + 1} / $totalPages",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 6.dp)
+                                )
+
+                                IconButton(
+                                    onClick = { if (currentPage < totalPages - 1) currentPage++ },
+                                    enabled = currentPage < totalPages - 1,
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Text(
+                                        text = "Next >",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (currentPage < totalPages - 1) Color(selectedTheme.accentHex) else Color.Gray
+                                    )
+                                }
+                            }
+                        } else {
+                            Text(
+                                text = "${items.size} photos ($totalCopies total)",
+                                fontSize = 11.sp,
+                                color = Color.Gray
+                            )
+                        }
                     }
 
+                    // Drag & Drop Enabled Live Sheet Preview
                     LiveSheetPreview(
                         items = items,
                         config = config,
                         theme = selectedTheme,
-                        modifier = Modifier.height(200.dp)
+                        currentPage = currentPage,
+                        onReorder = { srcSlot, dstSlot ->
+                            val expandedItems = mutableListOf<PhotoItem>()
+                            for (item in items) {
+                                repeat(item.copies) { expandedItems.add(item) }
+                            }
+                            val fromGlobal = currentPage * perPage + srcSlot
+                            val toGlobal = currentPage * perPage + dstSlot
+
+                            if (fromGlobal in expandedItems.indices && toGlobal in expandedItems.indices) {
+                                val srcItem = expandedItems[fromGlobal]
+                                val dstItem = expandedItems[toGlobal]
+
+                                val srcIdx = items.indexOfFirst { it.id == srcItem.id }
+                                val dstIdx = items.indexOfFirst { it.id == dstItem.id }
+
+                                if (srcIdx != -1 && dstIdx != -1 && srcIdx != dstIdx) {
+                                    val mutable = items.toMutableList()
+                                    val moved = mutable.removeAt(srcIdx)
+                                    mutable.add(dstIdx, moved)
+                                    items = mutable
+                                    Toast.makeText(context, "Reordered photo to position #${dstIdx + 1}", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                        modifier = Modifier.height(210.dp)
                     )
                 }
 
@@ -213,6 +289,14 @@ fun PhotoGridAppScreen() {
                             onItemCopiesChange = { idx, newCopies ->
                                 items = items.toMutableList().also { it[idx] = it[idx].copy(copies = newCopies) }
                             },
+                            onMoveItem = { fromIdx, toIdx ->
+                                if (fromIdx in items.indices && toIdx in items.indices) {
+                                    val mutable = items.toMutableList()
+                                    val moved = mutable.removeAt(fromIdx)
+                                    mutable.add(toIdx, moved)
+                                    items = mutable
+                                }
+                            },
                             onRemoveItem = { idx ->
                                 items = items.toMutableList().also { it.removeAt(idx) }
                             }
@@ -249,9 +333,10 @@ fun PhotoGridAppScreen() {
                                     Toast.makeText(context, "Please select at least 1 photo", Toast.LENGTH_SHORT).show()
                                     return@Button
                                 }
-                                val cachePdf = File(context.cacheDir, "Photo_Grid_Print.pdf")
+                                val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
+                                val cachePdf = File(context.cacheDir, "Photo_Grid_Print_${timestamp}.pdf")
                                 PdfGenerator.generatePdf(context, items, config, cachePdf)
-                                AndroidPrintHelper.printPdf(context, cachePdf)
+                                AndroidPrintHelper.printPdf(context, cachePdf, "Photo Grid Print $timestamp")
                             },
                             modifier = Modifier
                                 .weight(1f)
@@ -273,7 +358,8 @@ fun PhotoGridAppScreen() {
                                     Toast.makeText(context, "Please select at least 1 photo", Toast.LENGTH_SHORT).show()
                                     return@Button
                                 }
-                                val cachePdf = File(context.cacheDir, "Photo_Grid_Print.pdf")
+                                val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
+                                val cachePdf = File(context.cacheDir, "Photo_Grid_Print_${timestamp}.pdf")
                                 PdfGenerator.generatePdf(context, items, config, cachePdf)
 
                                 val contentUri = FileProvider.getUriForFile(
@@ -315,6 +401,7 @@ fun PhotosTab(
     onAddPhotos: () -> Unit,
     onClearAll: () -> Unit,
     onItemCopiesChange: (Int, Int) -> Unit,
+    onMoveItem: (fromIdx: Int, toIdx: Int) -> Unit,
     onRemoveItem: (Int) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
@@ -373,14 +460,44 @@ fun PhotosTab(
                                 .clip(RoundedCornerShape(4.dp)),
                             contentScale = ContentScale.Crop
                         )
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "#${index + 1}",
                             fontWeight = FontWeight.Bold,
                             color = Color(theme.accentHex),
                             fontSize = 14.sp
                         )
+
                         Spacer(modifier = Modifier.weight(1f))
+
+                        // Reorder buttons: Move Up and Move Down
+                        IconButton(
+                            onClick = { if (index > 0) onMoveItem(index, index - 1) },
+                            enabled = index > 0,
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.ArrowUpward,
+                                contentDescription = "Move Up",
+                                tint = if (index > 0) Color.White else Color.Gray,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { if (index < items.size - 1) onMoveItem(index, index + 1) },
+                            enabled = index < items.size - 1,
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.ArrowDownward,
+                                contentDescription = "Move Down",
+                                tint = if (index < items.size - 1) Color.White else Color.Gray,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(4.dp))
 
                         // Copies stepper
                         IconButton(
@@ -391,7 +508,7 @@ fun PhotosTab(
                         }
                         Text(
                             text = "${item.copies}x",
-                            modifier = Modifier.padding(horizontal = 6.dp),
+                            modifier = Modifier.padding(horizontal = 4.dp),
                             fontWeight = FontWeight.Bold,
                             color = Color.White
                         )

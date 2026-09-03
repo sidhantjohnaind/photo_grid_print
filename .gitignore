@@ -17,3 +17,11 @@ Desktop.ini
 .idea/
 .vscode/
 *.swp
+
+# Android Build Artifacts & Cache
+.gradle/
+**/build/
+android/.gradle/
+android/app/build/
+android/local.properties
+

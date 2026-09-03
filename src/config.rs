@@ -32,6 +32,12 @@ pub struct AppConfig {
     pub last_folder: Option<String>,
     #[serde(default)]
     pub theme: UiTheme,
+    #[serde(default = "default_fps_cap")]
+    pub fps_cap: u32,
+}
+
+fn default_fps_cap() -> u32 {
+    30
 }
 
 impl Default for AppConfig {
@@ -56,6 +62,7 @@ impl Default for AppConfig {
             output_path: default_out,
             last_folder: None,
             theme: UiTheme::CyberNeon,
+            fps_cap: 30,
         }
     }
 }

@@ -78,6 +78,8 @@ pub struct PhotoGridApp {
     pub drag_start_pos: Option<Pos2>,
     pub is_actively_dragging: bool,
     pub drag_target_idx: Option<usize>,
+    pub fps_cap: u32,
+    pub last_frame_time: Option<std::time::Instant>,
 }
 
 impl Default for PhotoGridApp {
@@ -119,6 +121,8 @@ impl Default for PhotoGridApp {
             drag_start_pos: None,
             is_actively_dragging: false,
             drag_target_idx: None,
+            fps_cap: cfg.fps_cap,
+            last_frame_time: None,
         }
     }
 }
@@ -184,6 +188,7 @@ impl PhotoGridApp {
             output_path: Some(self.output_path.clone()),
             last_folder: self.last_folder.clone(),
             theme: self.theme,
+            fps_cap: self.fps_cap,
         };
         cfg.save();
     }
@@ -713,6 +718,19 @@ fn themed_chip_btn(ui: &mut egui::Ui, theme: UiTheme, active: bool, text: &str) 
 
 impl eframe::App for PhotoGridApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // Enforce FPS Cap (default 30 FPS = ~33.3ms per frame) for optimal battery & GPU efficiency
+        if self.fps_cap > 0 {
+            let target_frame_ms = 1000 / self.fps_cap as u64;
+            let target_duration = std::time::Duration::from_millis(target_frame_ms);
+            if let Some(last) = self.last_frame_time {
+                let elapsed = last.elapsed();
+                if elapsed < target_duration {
+                    std::thread::sleep(target_duration - elapsed);
+                }
+            }
+            self.last_frame_time = Some(std::time::Instant::now());
+        }
+
         let ctx = ui.ctx().clone();
         let theme = self.theme;
 
@@ -773,6 +791,17 @@ impl eframe::App for PhotoGridApp {
                 RichText::new(format!("|  {}", summary_chip))
                     .size(11.5)
                     .color(theme.text_muted()),
+            );
+
+            let fps_text = if self.fps_cap > 0 {
+                format!("• {} FPS Cap", self.fps_cap)
+            } else {
+                "• Max FPS".to_string()
+            };
+            ui.label(
+                RichText::new(fps_text)
+                    .size(11.0)
+                    .color(theme.accent_color()),
             );
 
             // Dynamic Theme Switcher - Clean & Sleek
@@ -1412,6 +1441,33 @@ impl eframe::App for PhotoGridApp {
                                             }
 
                                             if self.output_path != prev_out {
+                                                self.save_config();
+                                            }
+                                        });
+                                    });
+
+                                    // Performance & Frame Rate Limiter
+                                    modern_card(theme).show(ui, |ui| {
+                                        ui.set_width(content_w);
+                                        ui.horizontal(|ui| {
+                                            ui.label(RichText::new("Frame Rate Limit (FPS)").strong().color(theme.text_primary()));
+                                            let label = if self.fps_cap > 0 { format!("({} FPS Active)", self.fps_cap) } else { "(Max VSync)".to_string() };
+                                            ui.label(RichText::new(label).size(11.0).color(theme.accent_color()));
+                                        });
+                                        ui.add_space(4.0);
+
+                                        ui.horizontal(|ui| {
+                                            let prev_fps = self.fps_cap;
+                                            if themed_chip_btn(ui, theme, self.fps_cap == 30, "30 FPS (Power Saver)").clicked() {
+                                                self.fps_cap = 30;
+                                            }
+                                            if themed_chip_btn(ui, theme, self.fps_cap == 60, "60 FPS").clicked() {
+                                                self.fps_cap = 60;
+                                            }
+                                            if themed_chip_btn(ui, theme, self.fps_cap == 0, "Monitor VSync").clicked() {
+                                                self.fps_cap = 0;
+                                            }
+                                            if self.fps_cap != prev_fps {
                                                 self.save_config();
                                             }
                                         });

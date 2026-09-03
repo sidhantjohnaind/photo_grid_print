@@ -80,6 +80,7 @@ pub struct PhotoGridApp {
     pub drag_target_idx: Option<usize>,
     pub fps_cap: u32,
     pub last_frame_time: Option<std::time::Instant>,
+    pub app_font: String,
 }
 
 impl Default for PhotoGridApp {
@@ -123,6 +124,7 @@ impl Default for PhotoGridApp {
             drag_target_idx: None,
             fps_cap: cfg.fps_cap,
             last_frame_time: None,
+            app_font: cfg.app_font,
         }
     }
 }
@@ -131,6 +133,7 @@ impl PhotoGridApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let app = Self::default();
         apply_modern_theme(&cc.egui_ctx, app.theme);
+        setup_aesthetic_fonts(&cc.egui_ctx, &app.app_font);
 
         let mut app = app;
 
@@ -189,6 +192,7 @@ impl PhotoGridApp {
             last_folder: self.last_folder.clone(),
             theme: self.theme,
             fps_cap: self.fps_cap,
+            app_font: self.app_font.clone(),
         };
         cfg.save();
     }
@@ -685,6 +689,64 @@ pub fn apply_modern_theme(ctx: &egui::Context, theme: UiTheme) {
     ctx.set_visuals(visuals);
 }
 
+pub fn setup_aesthetic_fonts(ctx: &egui::Context, font_name: &str) {
+    let mut fonts = egui::FontDefinitions::default();
+
+    // 1. Load Windows Segoe UI Symbol font for crisp emojis and symbols (no missing glyph boxes)
+    if let Ok(sym_data) = fs::read("C:\\Windows\\Fonts\\seguisym.ttf") {
+        fonts.font_data.insert(
+            "segoe_sym".to_owned(),
+            std::sync::Arc::new(egui::FontData::from_owned(sym_data)),
+        );
+    }
+
+    // 2. Select primary aesthetic typography
+    let (font_path, font_key) = match font_name {
+        "Arial" => ("C:\\Windows\\Fonts\\arial.ttf", "arial"),
+        "Calibri" => ("C:\\Windows\\Fonts\\calibri.ttf", "calibri"),
+        "Consolas" => ("C:\\Windows\\Fonts\\consola.ttf", "consolas"),
+        _ => ("C:\\Windows\\Fonts\\segoeui.ttf", "segoe_ui"),
+    };
+
+    if let Ok(font_data) = fs::read(font_path) {
+        fonts.font_data.insert(
+            font_key.to_owned(),
+            std::sync::Arc::new(egui::FontData::from_owned(font_data)),
+        );
+
+        fonts
+            .families
+            .entry(egui::FontFamily::Proportional)
+            .or_default()
+            .insert(0, font_key.to_owned());
+    }
+
+    if fonts.font_data.contains_key("segoe_sym") {
+        fonts
+            .families
+            .entry(egui::FontFamily::Proportional)
+            .or_default()
+            .push("segoe_sym".to_owned());
+    }
+
+    ctx.set_fonts(fonts);
+}
+
+pub fn load_app_icon() -> Option<egui::IconData> {
+    let icon_bytes = include_bytes!("../assets/app_icon.png");
+    if let Ok(img) = image::load_from_memory(icon_bytes) {
+        let rgba = img.to_rgba8();
+        let (width, height) = rgba.dimensions();
+        Some(egui::IconData {
+            rgba: rgba.into_raw(),
+            width,
+            height,
+        })
+    } else {
+        None
+    }
+}
+
 fn themed_tab_btn(ui: &mut egui::Ui, theme: UiTheme, selected: bool, text: &str, min_w: f32) -> egui::Response {
     let (bg, text_color, stroke) = if selected {
         (theme.accent_color(), Color32::WHITE, Stroke::new(1.0, theme.secondary_accent()))
@@ -833,7 +895,7 @@ impl eframe::App for PhotoGridApp {
                             let text = RichText::new(format!("{} {}", t.emoji(), t.name()))
                                 .size(12.0)
                                 .strong()
-                                .color(if is_active { t.accent_color() } else { theme.text_primary() });
+                                .color(if is_active { Color32::WHITE } else { theme.text_primary() });
                             if ui.selectable_label(is_active, text).clicked() {
                                 self.theme = t;
                                 apply_modern_theme(&ctx, self.theme);
@@ -841,7 +903,7 @@ impl eframe::App for PhotoGridApp {
                             }
                         }
                     });
-                ui.label(RichText::new("🎨 Theme:").size(12.0).color(theme.text_muted()));
+                ui.label(RichText::new("Theme:").size(12.0).color(theme.text_muted()));
             });
         });
 
@@ -1472,6 +1534,27 @@ impl eframe::App for PhotoGridApp {
                                             }
                                         });
                                     });
+
+                                    // Typography & Aesthetic Font Selector
+                                    modern_card(theme).show(ui, |ui| {
+                                        ui.set_width(content_w);
+                                        ui.horizontal(|ui| {
+                                            ui.label(RichText::new("Aesthetic Typography & Font").strong().color(theme.text_primary()));
+                                            ui.label(RichText::new(format!("({})", self.app_font)).size(11.0).color(theme.accent_color()));
+                                        });
+                                        ui.add_space(4.0);
+
+                                        ui.horizontal_wrapped(|ui| {
+                                            for f in ["Segoe UI", "Arial", "Calibri", "Consolas"] {
+                                                let is_active = self.app_font == f;
+                                                if themed_chip_btn(ui, theme, is_active, f).clicked() {
+                                                    self.app_font = f.to_string();
+                                                    setup_aesthetic_fonts(&ctx, &self.app_font);
+                                                    self.save_config();
+                                                }
+                                            }
+                                        });
+                                    });
                                 }
                             }
                         });
@@ -1867,7 +1950,7 @@ impl eframe::App for PhotoGridApp {
                                     } else {
                                         if is_hovered {
                                             ctx.set_cursor_icon(CursorIcon::Grab);
-                                            painter.rect_filled(cell_rect, 3.0, Color32::from_rgba_premultiplied(theme.accent_color().r(), theme.accent_color().g(), theme.accent_color().b(), 45));
+                                            // Clean crisp highlight border without dimming the photo
                                             painter.rect_stroke(cell_rect, 3.0, Stroke::new(2.5, theme.accent_color()), StrokeKind::Inside);
 
                                             let badge_text = format!("#{}: Drag to move | Click to edit", item_idx + 1);
@@ -2059,11 +2142,17 @@ impl eframe::App for PhotoGridApp {
 }
 
 pub fn run_gui() -> Result<(), eframe::Error> {
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([1260.0, 860.0])
+        .with_min_inner_size([960.0, 640.0])
+        .with_title("Photo Grid Print - Sheet Generator & Direct Print");
+
+    if let Some(icon) = load_app_icon() {
+        viewport = viewport.with_icon(icon);
+    }
+
     let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1260.0, 860.0])
-            .with_min_inner_size([960.0, 640.0])
-            .with_title("Photo Grid Print - Sheet Generator & Direct Print"),
+        viewport,
         ..Default::default()
     };
     eframe::run_native(

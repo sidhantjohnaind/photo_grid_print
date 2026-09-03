@@ -34,10 +34,16 @@ pub struct AppConfig {
     pub theme: UiTheme,
     #[serde(default = "default_fps_cap")]
     pub fps_cap: u32,
+    #[serde(default = "default_app_font")]
+    pub app_font: String,
 }
 
 fn default_fps_cap() -> u32 {
     30
+}
+
+fn default_app_font() -> String {
+    "Segoe UI".to_string()
 }
 
 impl Default for AppConfig {
@@ -63,6 +69,7 @@ impl Default for AppConfig {
             last_folder: None,
             theme: UiTheme::CyberNeon,
             fps_cap: 30,
+            app_font: "Segoe UI".to_string(),
         }
     }
 }
